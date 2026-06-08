@@ -3,13 +3,15 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST() {
   try {
-    await prisma.order.updateMany({
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    const result = await prisma.order.updateMany({
       where: {
+        status: "ENTREGUE",
         archived: false,
-        OR: [
-          { status: "ENTREGUE" },
-          { status: "CANCELADO" },
-        ],
+        updatedAt: {
+          lte: fiveMinutesAgo,
+        },
       },
       data: {
         archived: true,
@@ -17,14 +19,15 @@ export async function POST() {
       },
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      archived: result.count,
+    });
   } catch (error: any) {
-    console.error("ERRO AO ARQUIVAR PEDIDOS:", error);
-
     return NextResponse.json(
       {
-        error: "Erro ao arquivar pedidos",
-        details: error?.message || "Erro desconhecido",
+        success: false,
+        error: error.message || "Erro ao arquivar pedidos",
       },
       { status: 500 }
     );

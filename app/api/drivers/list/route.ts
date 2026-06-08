@@ -1,10 +1,23 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId } from "@/lib/server-company";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const drivers = await prisma.driver.findMany({
-      where: { active: true },
+      where: {
+        company_id: companyId,
+        active: true,
+      },
       orderBy: { name: "asc" },
     });
 

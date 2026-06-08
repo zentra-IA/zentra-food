@@ -21,6 +21,7 @@ function normalizeStatus(value: unknown): OrderStatus | null {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
     const orderId = body?.orderId ? String(body.orderId).trim() : "";
     const status = normalizeStatus(body?.status);
 
@@ -39,18 +40,19 @@ export async function POST(req: NextRequest) {
     }
 
     const updatedOrder = await prisma.order.update({
-      where: { id: orderId },
+      where: {
+        id: orderId,
+      },
       data: {
         status,
-        archived: status === "ENTREGUE" || status === "CANCELADO",
-        archivedAt:
-          status === "ENTREGUE" || status === "CANCELADO"
-            ? new Date()
-            : null,
+      },
+      include: {
+        items: true,
+        customer: true,
       },
     });
 
-    return NextResponse.json(updatedOrder);
+    return NextResponse.json(updatedOrder, { status: 200 });
   } catch (error: any) {
     console.error("ERRO AO ATUALIZAR STATUS:", error);
 

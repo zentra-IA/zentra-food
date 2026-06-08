@@ -1,36 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-function onlyDigits(value: string) {
-  return value.replace(/\D/g, "");
-}
+import { getCompanyId } from "@/lib/server-company";
 
 export async function GET(req: NextRequest) {
   try {
-    const q = req.nextUrl.searchParams.get("q")?.trim() || "";
+    const companyId = getCompanyId(req);
 
-    if (!q) {
-      return NextResponse.json([], { status: 200 });
+    if (!companyId) {
+      return NextResponse.json({ error: "Empresa não identificada" }, { status: 401 });
     }
 
-    const digits = onlyDigits(q);
+    const { searchParams } = new URL(req.url);
+    const q = String(searchParams.get("q") || "").trim();
+    const digits = q.replace(/\D/g, "");
+
+    if (!q || q.length < 2) {
+      return NextResponse.json([]);
+    }
 
     const customers = await prisma.customer.findMany({
-  where: {
-    OR: [
-      { name: { contains: q, mode: "insensitive" } },
-      { whatsapp: { contains: digits } },
-      { cpf: { contains: digits } }, // 👈 ESSENCIAL
-    ],
-  },
-  take: 10,
-});
+      where: {
+        company_id: companyId,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          ...(digits ? [{ whatsapp: { contains: digits } }, { cpf: { contains: digits } }] : []),
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
 
-    return NextResponse.json(customers, { status: 200 });
-  } catch (error) {
-    console.error("ERRO AO BUSCAR CLIENTES:", error);
+    return NextResponse.json(customers);
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "Erro ao buscar clientes" },
+      { error: "Erro ao buscar clientes", details: error?.message },
       { status: 500 }
     );
   }

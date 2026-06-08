@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId } from "@/lib/server-company";
 
 function makeSlug(value: string) {
   return value
@@ -17,130 +18,19 @@ type RouteContext = {
   }>;
 };
 
-type ProductAdditionalInput = {
-  additionalId: string;
-  required?: boolean;
-  sortOrder?: number;
-};
-
-type CategoryPriceInput = {
-  categoryId: string;
-  customPrice?: number | string | null;
-};
-
 export async function PUT(req: NextRequest, context: RouteContext) {
   try {
+    const companyId =
+      getCompanyId(req) || "41edd938-3eb4-420e-9675-2e53703ed70b";
+
     const { id } = await context.params;
     const body = await req.json();
 
-    const name = String(body?.name ?? "").trim();
-    const description =
-      body?.description !== undefined && body?.description !== null
-        ? String(body.description).trim()
-        : null;
-
-    const price = Number(body?.price);
-    const imageUrl =
-      body?.imageUrl !== undefined && body?.imageUrl !== null
-        ? String(body.imageUrl).trim()
-        : null;
-
-    const active = body?.active === undefined ? true : Boolean(body.active);
-    const inStock = body?.inStock === undefined ? true : Boolean(body.inStock);
-    const required =
-      body?.required === undefined ? true : Boolean(body.required);
-
-    const sortOrder =
-      body?.sortOrder === undefined || body?.sortOrder === null
-        ? 0
-        : Number(body.sortOrder);
-
-    const categoryIdsRaw: unknown[] = Array.isArray(body?.categoryIds)
-      ? body.categoryIds
-      : [];
-
-    const categoryIds: string[] = [
-      ...new Set(
-        categoryIdsRaw
-          .map((item) => String(item ?? "").trim())
-          .filter((item) => item.length > 0)
-      ),
-    ];
-
-    const categoryPricesRaw: CategoryPriceInput[] = Array.isArray(body?.categoryPrices)
-      ? body.categoryPrices
-      : [];
-
-    const categoryPricesMap = new Map<string, number | null>();
-
-    for (const item of categoryPricesRaw) {
-      const categoryId = String(item?.categoryId ?? "").trim();
-      if (!categoryId) continue;
-
-      const rawValue = item?.customPrice;
-
-      if (
-        rawValue === undefined ||
-        rawValue === null ||
-        String(rawValue).trim() === ""
-      ) {
-        categoryPricesMap.set(categoryId, null);
-        continue;
-      }
-
-      const normalized = String(rawValue).replace(",", ".").trim();
-      const parsed = Number(normalized);
-
-      if (Number.isNaN(parsed) || parsed < 0) {
-        return NextResponse.json(
-          { error: `Preço inválido para a categoria ${categoryId}` },
-          { status: 400 }
-        );
-      }
-
-      categoryPricesMap.set(categoryId, parsed);
-    }
-
-    const productAdditionalConfigs: ProductAdditionalInput[] = Array.isArray(
-      body?.productAdditionalConfigs
-    )
-      ? body.productAdditionalConfigs
-      : [];
-
-    if (!id) {
-      return NextResponse.json({ error: "ID inválido" }, { status: 400 });
-    }
-
-    if (!name) {
-      return NextResponse.json(
-        { error: "Nome do produto é obrigatório" },
-        { status: 400 }
-      );
-    }
-
-    if (!categoryIds.length) {
-      return NextResponse.json(
-        { error: "Selecione pelo menos uma categoria" },
-        { status: 400 }
-      );
-    }
-
-    if (Number.isNaN(price) || price < 0) {
-      return NextResponse.json(
-        { error: "Preço base inválido" },
-        { status: 400 }
-      );
-    }
-
-    if (Number.isNaN(sortOrder)) {
-      return NextResponse.json(
-        { error: "Ordem inválida" },
-        { status: 400 }
-      );
-    }
-
-    const existing = await prisma.product.findUnique({
-      where: { id },
+    const existing = await prisma.product.findFirst({
+      where: {
+        id,
+        company_id: companyId,
+      },
     });
 
     if (!existing) {
@@ -150,33 +40,54 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       );
     }
 
-    const categoriesFound = await prisma.category.findMany({
-      where: {
-        id: {
-          in: categoryIds,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
+    const name = String(body?.name ?? "").trim();
+    const description = body?.description
+      ? String(body.description).trim()
+      : null;
 
-    if (categoriesFound.length !== categoryIds.length) {
+    const price = Number(body?.price);
+
+    const rawImageUrl = body?.imageUrl
+      ? String(body.imageUrl).trim()
+      : "";
+
+    const imageUrl =
+      rawImageUrl && !rawImageUrl.startsWith("data:image")
+        ? rawImageUrl
+        : existing.imageUrl || null;
+
+    const active =
+      body?.active === undefined ? true : Boolean(body.active);
+
+    const inStock =
+      body?.inStock === undefined ? true : Boolean(body.inStock);
+
+    const sortOrder =
+      body?.sortOrder === undefined ? 0 : Number(body.sortOrder);
+
+    if (!name) {
       return NextResponse.json(
-        { error: "Uma ou mais categorias não foram encontradas" },
-        { status: 404 }
+        { error: "Nome obrigatório" },
+        { status: 400 }
       );
     }
 
-    let slug = makeSlug(name);
-    if (!slug) {
-      slug = `produto-${Date.now()}`;
+    if (Number.isNaN(price) || price < 0) {
+      return NextResponse.json(
+        { error: "Preço inválido" },
+        { status: 400 }
+      );
     }
+
+    let slug = makeSlug(name) || `produto-${Date.now()}`;
 
     const duplicate = await prisma.product.findFirst({
       where: {
-        id: { not: id },
         slug,
+        company_id: companyId,
+        id: {
+          not: id,
+        },
       },
     });
 
@@ -184,92 +95,48 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       slug = `${slug}-${Date.now()}`;
     }
 
-    const validConfigs = productAdditionalConfigs
-      .filter((item) => item?.additionalId)
-      .map((item, index) => ({
-        additionalId: String(item.additionalId).trim(),
-        required: Boolean(item.required),
-        sortOrder:
-          item.sortOrder !== undefined && !Number.isNaN(Number(item.sortOrder))
-            ? Number(item.sortOrder)
-            : index,
-      }));
-
     const updated = await prisma.product.update({
-      where: { id },
+      where: {
+        id,
+      },
       data: {
         name,
         slug,
         description,
         price,
-        imageUrl: imageUrl || null,
+        imageUrl,
         active,
         inStock,
-        required,
-        sortOrder,
-        categoryId: categoryIds[0],
-        categories: {
-          deleteMany: {},
-          create: categoryIds.map((categoryId: string, index: number) => {
-            const customPriceValue = categoryPricesMap.get(categoryId);
-
-            return {
-              categoryId,
-              sortOrder: index,
-              customPrice:
-                customPriceValue !== undefined ? customPriceValue : null,
-            };
-          }),
-        },
-        productAdditionalConfigs: {
-          deleteMany: {},
-          create: validConfigs,
-        },
-      },
-      include: {
-        categories: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          include: {
-            category: true,
-          },
-        },
-        productAdditionalConfigs: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          include: {
-            additional: true,
-          },
-        },
+        sortOrder: Number.isNaN(sortOrder) ? 0 : sortOrder,
       },
     });
 
     return NextResponse.json(updated, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("ERRO PUT PRODUCT:", error);
 
     return NextResponse.json(
       {
-        error: "Erro ao editar produto",
-        details: error?.message || "Erro desconhecido",
+        error: "Erro ao atualizar produto",
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE(_req: NextRequest, context: RouteContext) {
+export async function DELETE(req: NextRequest, context: RouteContext) {
   try {
+    const companyId =
+      getCompanyId(req) || "41edd938-3eb4-420e-9675-2e53703ed70b";
+
     const { id } = await context.params;
 
-    if (!id) {
-      return NextResponse.json({ error: "ID inválido" }, { status: 400 });
-    }
-
-    const existing = await prisma.product.findUnique({
-      where: { id },
+    const existing = await prisma.product.findFirst({
+      where: {
+        id,
+        company_id: companyId,
+      },
     });
 
     if (!existing) {
@@ -280,17 +147,19 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     }
 
     await prisma.product.delete({
-      where: { id },
+      where: {
+        id,
+      },
     });
 
     return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("ERRO DELETE PRODUCT:", error);
 
     return NextResponse.json(
       {
         error: "Erro ao excluir produto",
-        details: error?.message || "Erro desconhecido",
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );

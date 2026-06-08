@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireCompany } from "@/lib/server-company";
 import {
   buildDriverWhatsappMessage,
   buildMapsRouteUrl,
@@ -17,6 +18,7 @@ function generateBatchCode() {
 
 export async function POST(req: NextRequest) {
   try {
+    const { companyId } = requireCompany(req);
     const body = await req.json();
 
     const orderIds = Array.isArray(body?.orderIds)
@@ -24,11 +26,12 @@ export async function POST(req: NextRequest) {
       : [];
 
     const driverId = String(body?.driverId || "").trim();
+
     const routeMode: RouteMode =
       body?.routeMode === "FAR_TO_NEAR" ? "FAR_TO_NEAR" : "NEAR_TO_FAR";
 
-   const storeAddress =
-  String(body?.storeAddress || "").trim() || DEFAULT_STORE_ADDRESS;
+    const storeAddress =
+      String(body?.storeAddress || "").trim() || DEFAULT_STORE_ADDRESS;
 
     if (!orderIds.length) {
       return NextResponse.json(
@@ -44,21 +47,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const driver = await prisma.driver.findUnique({
-      where: { id: driverId },
+    const driver = await prisma.driver.findFirst({
+      where: {
+        id: driverId,
+        company_id: companyId,
+        active: true,
+      },
     });
 
     if (!driver) {
       return NextResponse.json(
-        { error: "Motoqueiro não encontrado" },
+        { error: "Motoqueiro não encontrado nesta empresa" },
         { status: 404 }
       );
     }
 
     const orders = await prisma.order.findMany({
       where: {
-        id: { in: orderIds },
-        archived: false,
+        company_id: companyId,
+        id: {
+          in: orderIds,
+        },
       },
       include: {
         customer: true,
@@ -68,12 +77,14 @@ export async function POST(req: NextRequest) {
 
     if (!orders.length) {
       return NextResponse.json(
-        { error: "Pedidos não encontrados" },
+        { error: "Pedidos não encontrados nesta empresa" },
         { status: 404 }
       );
     }
 
-    const validOrders = orders.filter((order) => !!getMapsAddress(order.customer));
+    const validOrders = orders.filter((order) =>
+      Boolean(getMapsAddress(order.customer))
+    );
 
     if (!validOrders.length) {
       return NextResponse.json(
@@ -105,15 +116,18 @@ export async function POST(req: NextRequest) {
         code: order.code,
         total: Number(order.total || 0),
         paymentMethod: order.paymentMethod,
-        changeFor: order.changeFor,
-        observation: order.observation,
+        changeFor: null,
+        observation: null,
         customer: order.customer,
       })),
     });
 
     const driverWhatsapp = getCleanWhatsapp(driver.whatsapp);
+
     const whatsappUrl = driverWhatsapp
-      ? `https://wa.me/55${driverWhatsapp}?text=${encodeURIComponent(whatsappMessage)}`
+      ? `https://wa.me/55${driverWhatsapp}?text=${encodeURIComponent(
+          whatsappMessage
+        )}`
       : "";
 
     return NextResponse.json({
@@ -133,8 +147,8 @@ export async function POST(req: NextRequest) {
         routeOrder: order.routeOrder,
         total: Number(order.total || 0),
         paymentMethod: order.paymentMethod,
-        changeFor: order.changeFor,
-        observation: order.observation,
+        changeFor: null,
+        observation: null,
         customer: order.customer,
       })),
     });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId } from "@/lib/server-company";
 
 function makeSlug(value: string) {
   return value
@@ -19,6 +20,15 @@ type RouteContext = {
 
 export async function PUT(req: NextRequest, context: RouteContext) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const { id } = await context.params;
     const body = await req.json();
 
@@ -43,29 +53,11 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         ? 0
         : Number(body.sortOrder);
 
-    if (!id) {
-      return NextResponse.json(
-        { error: "ID inválido" },
-        { status: 400 }
-      );
-    }
-
-    if (!name) {
-      return NextResponse.json(
-        { error: "Nome da categoria é obrigatório" },
-        { status: 400 }
-      );
-    }
-
-    if (Number.isNaN(sortOrder)) {
-      return NextResponse.json(
-        { error: "Ordem inválida" },
-        { status: 400 }
-      );
-    }
-
-    const existing = await prisma.category.findUnique({
-      where: { id },
+    const existing = await prisma.category.findFirst({
+      where: {
+        id,
+        companyId,
+      },
     });
 
     if (!existing) {
@@ -75,16 +67,13 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       );
     }
 
-    let slug = makeSlug(name);
-
-    if (!slug) {
-      slug = `categoria-${Date.now()}`;
-    }
+    let slug = makeSlug(name) || `categoria-${Date.now()}`;
 
     const duplicate = await prisma.category.findFirst({
       where: {
         id: { not: id },
         slug,
+        companyId,
       },
     });
 
@@ -101,7 +90,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         type,
         selectionRequired,
         active,
-        sortOrder,
+        sortOrder: Number.isNaN(sortOrder) ? 0 : sortOrder,
       },
     });
 
@@ -119,19 +108,24 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(_req: NextRequest, context: RouteContext) {
+export async function DELETE(req: NextRequest, context: RouteContext) {
   try {
-    const { id } = await context.params;
+    const companyId = getCompanyId(req);
 
-    if (!id) {
+    if (!companyId) {
       return NextResponse.json(
-        { error: "ID inválido" },
-        { status: 400 }
+        { error: "Empresa não identificada" },
+        { status: 401 }
       );
     }
 
-    const existing = await prisma.category.findUnique({
-      where: { id },
+    const { id } = await context.params;
+
+    const existing = await prisma.category.findFirst({
+      where: {
+        id,
+        companyId,
+      },
     });
 
     if (!existing) {
@@ -145,10 +139,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
       where: { id },
     });
 
-    return NextResponse.json(
-      { success: true },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error("ERRO AO EXCLUIR CATEGORIA:", error);
 

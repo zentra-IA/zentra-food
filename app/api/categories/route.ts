@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CategoryType } from "@prisma/client";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 
 function makeSlug(value: string) {
   return value
@@ -12,9 +13,65 @@ function makeSlug(value: string) {
     .replace(/[^a-z0-9-]/g, "");
 }
 
-export async function GET() {
+async function resolveBranchId(req: NextRequest, companyId: string) {
+  const cookieBranchId = getBranchId(req);
+
+  if (cookieBranchId) return cookieBranchId;
+
+  const branch = await prisma.branches.findFirst({
+    where: {
+      company_id: companyId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!branch?.id) {
+    throw new Error("Nenhuma filial encontrada para esta empresa");
+  }
+
+  return branch.id;
+}
+
+async function generateUniqueCategorySlug(name: string) {
+  const baseSlug = makeSlug(name) || `categoria-${Date.now()}`;
+
+  let slug = baseSlug;
+  let count = 1;
+
+  while (true) {
+    const exists = await prisma.category.findFirst({
+      where: {
+        slug,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!exists) return slug;
+
+    slug = `${baseSlug}-${count}`;
+    count++;
+  }
+}
+
+export async function GET(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const categories = await prisma.category.findMany({
+      where: {
+        company_id: companyId,
+      },
       orderBy: {
         sortOrder: "asc",
       },
@@ -36,8 +93,18 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
+    const branchId = await resolveBranchId(req, companyId);
+
     const body = await req.json();
-    console.log("BODY CATEGORY:", body);
 
     const name = String(body?.name ?? "").trim();
 
@@ -54,10 +121,9 @@ export async function POST(req: NextRequest) {
         ? false
         : Boolean(body.selectionRequired);
 
-    const active =
-      body?.active === undefined ? true : Boolean(body.active);
+    const active = body?.active === undefined ? true : Boolean(body.active);
 
-    const sortOrderRaw =
+    const sortOrder =
       body?.sortOrder === undefined || body?.sortOrder === null
         ? 0
         : Number(body.sortOrder);
@@ -69,37 +135,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (Number.isNaN(sortOrderRaw)) {
+    if (Number.isNaN(sortOrder)) {
       return NextResponse.json(
         { error: "Ordem inválida" },
         { status: 400 }
       );
     }
 
-    let slug = makeSlug(name);
-
-    if (!slug) {
-      slug = `categoria-${Date.now()}`;
-    }
-
-    const existingSlug = await prisma.category.findUnique({
-      where: { slug },
-      select: { id: true },
-    });
-
-    if (existingSlug) {
-      slug = `${slug}-${Date.now()}`;
-    }
+    const slug = await generateUniqueCategorySlug(name);
 
     const category = await prisma.category.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId,
+
         name,
         slug,
         description,
         type,
         selectionRequired,
         active,
-        sortOrder: sortOrderRaw,
+        sortOrder,
       },
     });
 

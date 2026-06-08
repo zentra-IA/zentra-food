@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
+
+function resolveCompanyId(req: NextRequest) {
+  return req.headers.get("x-company-id") || getCompanyId(req);
+}
 
 function makeSlug(value: string) {
   return value
@@ -11,234 +16,207 @@ function makeSlug(value: string) {
     .replace(/[^a-z0-9-]/g, "");
 }
 
-type ComboAdditionalInput = {
-  additionalId: string;
-  required?: boolean;
-  sortOrder?: number;
-};
+async function resolveBranchId(
+  req: NextRequest,
+  companyId: string
+) {
+  const cookieBranchId = getBranchId(req);
 
-export async function GET() {
-  try {
-    const combos = await prisma.combo.findMany({
+  if (cookieBranchId) return cookieBranchId;
+
+  const branch = await prisma.branches.findFirst({
+    where: {
+      company_id: companyId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return branch?.id || null;
+}
+
+async function generateUniqueSlug(
+  companyId: string,
+  name: string
+) {
+  const baseSlug = makeSlug(name) || `combo-${Date.now()}`;
+
+  let slug = baseSlug;
+  let count = 1;
+
+  while (true) {
+    const exists = await prisma.combo.findFirst({
       where: {
-        active: true,
-      },
-      orderBy: {
-        sortOrder: "asc",
+        company_id: companyId,
+        slug,
       },
       select: {
         id: true,
-        name: true,
-        slug: true,
-        description: true,
-        price: true,
-        imageUrl: true,
-        active: true,
-        sortOrder: true,
-        groups: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          select: {
-            id: true,
-            comboId: true,
-            name: true,
-            required: true,
-            minSelect: true,
-            maxSelect: true,
-            sortOrder: true,
-            items: {
-              orderBy: {
-                sortOrder: "asc",
-              },
-              select: {
-                id: true,
-                productId: true,
-                sortOrder: true,
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                    description: true,
-                    price: true,
-                    imageUrl: true,
-                    active: true,
-                    inStock: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        comboAdditionalConfigs: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          select: {
-            additionalId: true,
-            required: true,
-            sortOrder: true,
-            additional: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                description: true,
-                price: true,
-                required: true,
-                active: true,
-                sortOrder: true,
-              },
-            },
-          },
-        },
       },
     });
 
-    return NextResponse.json(combos, {
-      status: 200,
-      headers: {
-        "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
+    if (!exists) return slug;
+
+    slug = `${baseSlug}-${count}`;
+    count++;
+  }
+}
+
+const comboInclude = {
+  groups: {
+    orderBy: {
+      createdAt: "asc" as const,
+    },
+    include: {
+      items: {
+        orderBy: {
+          createdAt: "asc" as const,
+        },
+        include: {
+          product: true,
+        },
       },
+    },
+  },
+};
+
+export async function GET(req: NextRequest) {
+  try {
+    const companyId = resolveCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        {
+          error: "Empresa não identificada",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const combos = await prisma.combo.findMany({
+      where: {
+        company_id: companyId,
+        active: true,
+      },
+      orderBy: [
+        {
+          sortOrder: "asc",
+        },
+        {
+          createdAt: "asc",
+        },
+      ],
+      include: comboInclude,
     });
-  } catch (error) {
-    console.error("ERRO AO BUSCAR COMBOS:", error);
+
+    return NextResponse.json(combos);
+  } catch (error: any) {
+    console.error("ERRO GET COMBOS:", error);
 
     return NextResponse.json(
       {
         error: "Erro ao buscar combos",
-        details: error instanceof Error ? error.message : String(error),
+        details: error?.message || String(error),
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const companyId = resolveCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        {
+          error: "Empresa não identificada",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const branchId = await resolveBranchId(
+      req,
+      companyId
+    );
+
     const body = await req.json();
 
-    const name = String(body?.name ?? "").trim();
-    const description =
-      body?.description !== undefined && body?.description !== null
-        ? String(body.description).trim()
-        : null;
+    const name = String(body?.name || "").trim();
+
+    const description = body?.description
+      ? String(body.description).trim()
+      : null;
 
     const price = Number(body?.price);
-    const imageUrl =
-      body?.imageUrl !== undefined && body?.imageUrl !== null
-        ? String(body.imageUrl).trim()
-        : null;
 
-    const active = body?.active === undefined ? true : Boolean(body.active);
+    const imageUrl = body?.imageUrl
+      ? String(body.imageUrl).trim()
+      : null;
+
+    const active =
+      body?.active === undefined
+        ? true
+        : Boolean(body.active);
+
     const sortOrder =
-      body?.sortOrder === undefined || body?.sortOrder === null
+      body?.sortOrder === undefined
         ? 0
         : Number(body.sortOrder);
 
-    const comboAdditionalConfigs: ComboAdditionalInput[] = Array.isArray(
-      body?.comboAdditionalConfigs
-    )
-      ? body.comboAdditionalConfigs
-      : [];
-
     if (!name) {
       return NextResponse.json(
-        { error: "Nome do combo é obrigatório" },
-        { status: 400 }
+        {
+          error: "Nome é obrigatório",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    if (Number.isNaN(price) || price < 0) {
-      return NextResponse.json(
-        { error: "Preço inválido" },
-        { status: 400 }
-      );
-    }
-
-    if (Number.isNaN(sortOrder)) {
-      return NextResponse.json(
-        { error: "Ordem inválida" },
-        { status: 400 }
-      );
-    }
-
-    let slug = makeSlug(name);
-
-    if (!slug) {
-      slug = `combo-${Date.now()}`;
-    }
-
-    const existingSlug = await prisma.combo.findUnique({
-      where: { slug },
-    });
-
-    if (existingSlug) {
-      slug = `${slug}-${Date.now()}`;
-    }
-
-    const validAdditionalConfigs = comboAdditionalConfigs
-      .filter((item) => item?.additionalId)
-      .map((item, index) => ({
-        additionalId: String(item.additionalId).trim(),
-        required: Boolean(item.required),
-        sortOrder:
-          item.sortOrder !== undefined && !Number.isNaN(Number(item.sortOrder))
-            ? Number(item.sortOrder)
-            : index,
-      }));
+    const slug = await generateUniqueSlug(
+      companyId,
+      name
+    );
 
     const combo = await prisma.combo.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId,
         name,
         slug,
         description,
         price,
-        imageUrl: imageUrl || null,
+        imageUrl,
         active,
         sortOrder,
-        comboAdditionalConfigs: {
-          create: validAdditionalConfigs,
-        },
       },
-      include: {
-        groups: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          include: {
-            items: {
-              orderBy: {
-                sortOrder: "asc",
-              },
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        comboAdditionalConfigs: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-          include: {
-            additional: true,
-          },
-        },
-      },
+      include: comboInclude,
     });
 
-    return NextResponse.json(combo, { status: 201 });
-  } catch (error) {
-    console.error("ERRO AO CRIAR COMBO:", error);
+    return NextResponse.json(combo, {
+      status: 201,
+    });
+  } catch (error: any) {
+    console.error("ERRO POST COMBO:", error);
 
     return NextResponse.json(
       {
         error: "Erro ao criar combo",
-        details: error instanceof Error ? error.message : String(error),
+        details: error?.message || String(error),
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

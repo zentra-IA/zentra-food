@@ -38,6 +38,11 @@ export default function CategoriasPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  function getCompanyId() {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("active_company_id") || "";
+  }
+
   useEffect(() => {
     loadCategories();
   }, []);
@@ -46,17 +51,28 @@ export default function CategoriasPage() {
     try {
       setLoading(true);
 
-      const res = await fetch("/api/categories", { cache: "no-store" });
+      const res = await fetch("/api/categories", {
+        cache: "no-store",
+        headers: {
+          "x-company-id": getCompanyId(),
+        },
+      });
+
       const data = await res.json().catch(() => []);
 
-      if (Array.isArray(data)) {
-        const ordered = [...data].sort(
-          (a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
-        );
-        setCategories(ordered);
-      } else {
+      if (!res.ok) {
+        console.error("ERRO AO CARREGAR CATEGORIAS:", data);
         setCategories([]);
+        return;
       }
+
+      const ordered = Array.isArray(data)
+        ? [...data].sort(
+            (a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+          )
+        : [];
+
+      setCategories(ordered);
     } catch (error) {
       console.error("Erro ao carregar categorias:", error);
       setCategories([]);
@@ -100,6 +116,7 @@ export default function CategoriasPage() {
         method,
         headers: {
           "Content-Type": "application/json",
+          "x-company-id": getCompanyId(),
         },
         body: JSON.stringify(payload),
       });
@@ -107,14 +124,25 @@ export default function CategoriasPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        alert(data?.error || "Erro ao salvar categoria");
+        console.error("ERRO API CATEGORIA:", data);
+
+        alert(
+          `${data?.error || "Erro ao salvar categoria"}${
+            data?.details ? `\n\nDetalhes: ${data.details}` : ""
+          }`
+        );
+
         return;
       }
 
       resetForm();
       await loadCategories();
 
-      alert(editingId ? "Categoria atualizada com sucesso!" : "Categoria criada com sucesso!");
+      alert(
+        editingId
+          ? "Categoria atualizada com sucesso!"
+          : "Categoria criada com sucesso!"
+      );
     } catch (error) {
       console.error("Erro ao salvar categoria:", error);
       alert("Erro ao salvar categoria");
@@ -125,6 +153,7 @@ export default function CategoriasPage() {
 
   function handleEdit(category: Category) {
     setEditingId(category.id);
+
     setForm({
       name: category.name || "",
       description: category.description || "",
@@ -134,7 +163,10 @@ export default function CategoriasPage() {
       sortOrder: String(category.sortOrder ?? 0),
     });
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   async function handleDelete(id: string) {
@@ -144,12 +176,22 @@ export default function CategoriasPage() {
     try {
       const res = await fetch(`/api/categories/${id}`, {
         method: "DELETE",
+        headers: {
+          "x-company-id": getCompanyId(),
+        },
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        alert(data?.error || "Erro ao excluir categoria");
+        console.error("ERRO AO EXCLUIR CATEGORIA:", data);
+
+        alert(
+          `${data?.error || "Erro ao excluir categoria"}${
+            data?.details ? `\n\nDetalhes: ${data.details}` : ""
+          }`
+        );
+
         return;
       }
 
@@ -162,181 +204,266 @@ export default function CategoriasPage() {
   }
 
   return (
-    <main className="p-10">
-      <h1 className="mb-6 text-3xl font-bold">Admin • Categorias</h1>
+    <main className="min-h-screen bg-slate-50 p-3 text-slate-900 md:p-8">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-red-600">Zentra Food</p>
+            <h1 className="text-2xl font-black tracking-tight md:text-4xl">
+              Categorias
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Organize o cardápio por grupos como pizzas, bebidas, combos e
+              adicionais.
+            </p>
+          </div>
 
-      <div className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">
-          {editingId ? "Editar categoria" : "Criar categoria"}
-        </h2>
+          <button
+            type="button"
+            onClick={loadCategories}
+            disabled={loading}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-50 sm:w-auto"
+          >
+            {loading ? "Atualizando..." : "Atualizar lista"}
+          </button>
+        </div>
 
-        <div className="grid gap-3">
-          <input
-            type="text"
-            placeholder="Nome da categoria"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="rounded border px-3 py-2"
-          />
+        <section className="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+          <div className="mb-5 flex flex-col gap-1">
+            <h2 className="text-xl font-black">
+              {editingId ? "Editar categoria" : "Criar categoria"}
+            </h2>
+            <p className="text-sm text-slate-500">
+              Use nomes simples. O cliente final vai ver isso no cardápio.
+            </p>
+          </div>
 
-          <textarea
-            placeholder="Descrição"
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="rounded border px-3 py-2"
-          />
+          <div className="grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Nome da categoria
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Pizzas, Bebidas, Combos"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      name: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                />
+              </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Ordem no cardápio
+                </label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={form.sortOrder}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      sortOrder: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Tipo da categoria
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                Descrição
               </label>
-
-              <select
-                value={form.type}
+              <textarea
+                placeholder="Ex: Escolha sua pizza favorita."
+                value={form.description}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    type: e.target.value as "NORMAL" | "PIZZA_HALF_HALF",
+                    description: e.target.value,
                   })
                 }
-                className="w-full rounded border px-3 py-2"
-              >
-                <option value="NORMAL">Categoria normal</option>
-                <option value="PIZZA_HALF_HALF">Pizza meio a meio</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Ordem no cardápio
-              </label>
-
-              <input
-                type="number"
-                placeholder="Ordem"
-                value={form.sortOrder}
-                onChange={(e) => setForm({ ...form, sortOrder: e.target.value })}
-                className="w-full rounded border px-3 py-2"
+                className="min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
               />
             </div>
-          </div>
 
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={form.selectionRequired}
-              onChange={(e) =>
-                setForm({ ...form, selectionRequired: e.target.checked })
-              }
-            />
-            Exigir seleção
-          </label>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="md:col-span-1">
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Tipo da categoria
+                </label>
+                <select
+                  value={form.type}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      type: e.target.value as "NORMAL" | "PIZZA_HALF_HALF",
+                    })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                >
+                  <option value="NORMAL">Categoria normal</option>
+                  <option value="PIZZA_HALF_HALF">Pizza meio a meio</option>
+                </select>
+              </div>
 
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={form.active}
-              onChange={(e) =>
-                setForm({ ...form, active: e.target.checked })
-              }
-            />
-            Categoria ativa
-          </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.selectionRequired}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      selectionRequired: e.target.checked,
+                    })
+                  }
+                  className="h-5 w-5"
+                />
+                Exigir seleção
+              </label>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={saving}
-              className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-            >
-              {saving
-                ? editingId
-                  ? "Salvando..."
-                  : "Criando..."
-                : editingId
-                ? "Salvar edição"
-                : "Criar categoria"}
-            </button>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      active: e.target.checked,
+                    })
+                  }
+                  className="h-5 w-5"
+                />
+                Categoria ativa
+              </label>
+            </div>
 
-            {editingId && (
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row">
               <button
                 type="button"
-                onClick={resetForm}
-                className="rounded bg-gray-500 px-4 py-2 text-white"
+                onClick={handleSubmit}
+                disabled={saving}
+                className="w-full rounded-2xl bg-red-600 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50 sm:w-auto"
               >
-                Cancelar edição
+                {saving
+                  ? editingId
+                    ? "Salvando..."
+                    : "Criando..."
+                  : editingId
+                  ? "Salvar edição"
+                  : "Criar categoria"}
               </button>
-            )}
+
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="w-full rounded-2xl bg-slate-200 px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-300 sm:w-auto"
+                >
+                  Cancelar edição
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">Categorias cadastradas</h2>
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+          <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-black">Categorias cadastradas</h2>
+              <p className="text-sm text-slate-500">
+                {categories.length} categoria(s) encontrada(s).
+              </p>
+            </div>
+          </div>
 
-        {loading ? (
-          <p className="text-gray-500">Carregando categorias...</p>
-        ) : categories.length === 0 ? (
-          <p className="text-gray-500">Nenhuma categoria cadastrada.</p>
-        ) : (
-          <div className="space-y-3">
-            {categories.map((category) => (
-              <div
-                key={category.id}
-                className="flex flex-col gap-3 rounded border p-3 md:flex-row md:items-center md:justify-between"
-              >
-                <div className="flex-1">
-                  <p className="font-semibold">{category.name}</p>
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
+              Carregando categorias...
+            </div>
+          ) : categories.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
+              Nenhuma categoria cadastrada ainda.
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {categories.map((category) => (
+                <article
+                  key={category.id}
+                  className="rounded-3xl border border-slate-200 bg-slate-50 p-4 transition hover:border-red-200 hover:bg-white hover:shadow-sm"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">
+                        {category.name}
+                      </h3>
 
-                  {category.description && (
-                    <p className="text-sm text-gray-600">
-                      {category.description}
+                      {category.description && (
+                        <p className="mt-1 text-sm text-slate-500">
+                          {category.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-black ${
+                        category.active
+                          ? "bg-green-100 text-green-700"
+                          : "bg-slate-200 text-slate-500"
+                      }`}
+                    >
+                      {category.active ? "Ativa" : "Inativa"}
+                    </span>
+                  </div>
+
+                  <div className="mb-4 grid gap-2 text-sm text-slate-600">
+                    <p>
+                      <strong>Tipo:</strong>{" "}
+                      {category.type === "PIZZA_HALF_HALF"
+                        ? "Pizza meio a meio"
+                        : "Normal"}
                     </p>
-                  )}
 
-                  <p className="text-sm text-gray-500">
-                    Tipo:{" "}
-                    {category.type === "PIZZA_HALF_HALF"
-                      ? "Pizza meio a meio"
-                      : "Normal"}
-                  </p>
+                    <p>
+                      <strong>Exigir seleção:</strong>{" "}
+                      {category.selectionRequired ? "Sim" : "Não"}
+                    </p>
 
-                  <p className="text-sm text-gray-500">
-                    Exigir seleção: {category.selectionRequired ? "Sim" : "Não"}
-                  </p>
+                    <p>
+                      <strong>Ordem:</strong>{" "}
+                      {Number(category.sortOrder || 0)}
+                    </p>
+                  </div>
 
-                  <p className="text-sm text-gray-500">
-                    Ativa: {category.active ? "Sim" : "Não"}
-                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(category)}
+                      className="w-full rounded-2xl bg-yellow-500 px-4 py-3 text-sm font-black text-white transition hover:bg-yellow-600 sm:w-auto"
+                    >
+                      Editar
+                    </button>
 
-                  <p className="text-sm text-gray-500">
-                    Ordem: {Number(category.sortOrder || 0)}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(category)}
-                    className="rounded bg-yellow-600 px-3 py-1 text-white"
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(category.id)}
-                    className="rounded bg-red-600 px-3 py-1 text-white"
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(category.id)}
+                      className="w-full rounded-2xl bg-red-600 px-4 py-3 text-sm font-black text-white transition hover:bg-red-700 sm:w-auto"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );

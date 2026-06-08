@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 
 function makeSlug(value: string) {
   return value
@@ -9,6 +10,27 @@ function makeSlug(value: string) {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
+}
+
+async function resolveBranchId(req: NextRequest, companyId: string) {
+  const cookieBranchId = getBranchId(req);
+
+  if (cookieBranchId) return cookieBranchId;
+
+  const branch = await prisma.branches.findFirst({
+    where: {
+      company_id: companyId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!branch?.id) {
+    throw new Error("Nenhuma filial encontrada para esta empresa");
+  }
+
+  return branch.id;
 }
 
 type ProductAdditionalInput = {
@@ -22,9 +44,21 @@ type CategoryPriceInput = {
   customPrice?: number | string | null;
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const products = await prisma.product.findMany({
+      where: {
+        company_id: companyId,
+      },
       orderBy: {
         sortOrder: "asc",
       },
@@ -39,7 +73,7 @@ export async function GET() {
         },
         productAdditionalConfigs: {
           orderBy: {
-            sortOrder: "asc",
+            createdAt: "asc",
           },
           include: {
             additional: true,
@@ -64,19 +98,26 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
+    const branchId = await resolveBranchId(req, companyId);
+
     const body = await req.json();
 
     const name = String(body?.name ?? "").trim();
-    const description =
-      body?.description !== undefined && body?.description !== null
-        ? String(body.description).trim()
-        : null;
+    const description = body?.description
+      ? String(body.description).trim()
+      : null;
 
     const price = Number(body?.price);
-    const imageUrl =
-      body?.imageUrl !== undefined && body?.imageUrl !== null
-        ? String(body.imageUrl).trim()
-        : null;
+    const imageUrl = body?.imageUrl ? String(body.imageUrl).trim() : null;
 
     const active = body?.active === undefined ? true : Boolean(body.active);
     const inStock = body?.inStock === undefined ? true : Boolean(body.inStock);
@@ -92,45 +133,13 @@ export async function POST(req: NextRequest) {
       ? body.categoryIds
       : [];
 
-    const categoryIds: string[] = [
+    const categoryIds = [
       ...new Set(
         categoryIdsRaw
           .map((item) => String(item ?? "").trim())
-          .filter((item) => item.length > 0)
+          .filter(Boolean)
       ),
     ];
-
-    const categoryPricesRaw: CategoryPriceInput[] = Array.isArray(body?.categoryPrices)
-      ? body.categoryPrices
-      : [];
-
-    const categoryPricesMap = new Map<string, number | null>();
-    for (const item of categoryPricesRaw) {
-      const categoryId = String(item?.categoryId ?? "").trim();
-      if (!categoryId) continue;
-
-      const raw = item?.customPrice;
-      if (raw === undefined || raw === null || String(raw).trim() === "") {
-        categoryPricesMap.set(categoryId, null);
-        continue;
-      }
-
-      const parsed = Number(raw);
-      if (Number.isNaN(parsed) || parsed < 0) {
-        return NextResponse.json(
-          { error: `Preço inválido para a categoria ${categoryId}` },
-          { status: 400 }
-        );
-      }
-
-      categoryPricesMap.set(categoryId, parsed);
-    }
-
-    const productAdditionalConfigs: ProductAdditionalInput[] = Array.isArray(
-      body?.productAdditionalConfigs
-    )
-      ? body.productAdditionalConfigs
-      : [];
 
     if (!name) {
       return NextResponse.json(
@@ -160,11 +169,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const categoryPricesRaw: CategoryPriceInput[] = Array.isArray(
+      body?.categoryPrices
+    )
+      ? body.categoryPrices
+      : [];
+
+    const categoryPricesMap = new Map<string, number | null>();
+
+    for (const item of categoryPricesRaw) {
+      const categoryId = String(item?.categoryId ?? "").trim();
+      if (!categoryId) continue;
+
+      const raw = item?.customPrice;
+
+      if (raw === undefined || raw === null || String(raw).trim() === "") {
+        categoryPricesMap.set(categoryId, null);
+        continue;
+      }
+
+      const parsed = Number(String(raw).replace(",", ".").trim());
+
+      if (Number.isNaN(parsed) || parsed < 0) {
+        return NextResponse.json(
+          { error: `Preço inválido para a categoria ${categoryId}` },
+          { status: 400 }
+        );
+      }
+
+      categoryPricesMap.set(categoryId, parsed);
+    }
+
     const categoriesFound = await prisma.category.findMany({
       where: {
         id: {
           in: categoryIds,
         },
+        company_id: companyId,
       },
       select: {
         id: true,
@@ -184,49 +225,66 @@ export async function POST(req: NextRequest) {
       slug = `produto-${Date.now()}`;
     }
 
-    const existingSlug = await prisma.product.findUnique({
-      where: { slug },
+    const existingSlug = await prisma.product.findFirst({
+      where: {
+        slug,
+        company_id: companyId,
+      },
+      select: {
+        id: true,
+      },
     });
 
     if (existingSlug) {
       slug = `${slug}-${Date.now()}`;
     }
 
+    const productAdditionalConfigs: ProductAdditionalInput[] = Array.isArray(
+      body?.productAdditionalConfigs
+    )
+      ? body.productAdditionalConfigs
+      : [];
+
     const validConfigs = productAdditionalConfigs
       .filter((item) => item?.additionalId)
-      .map((item, index) => ({
+      .map((item) => ({
         additionalId: String(item.additionalId).trim(),
         required: Boolean(item.required),
-        sortOrder:
-          item.sortOrder !== undefined && !Number.isNaN(Number(item.sortOrder))
-            ? Number(item.sortOrder)
-            : index,
+        company_id: companyId,
+        branch_id: branchId,
       }));
 
     const product = await prisma.product.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId,
+
         name,
         slug,
         description,
         price,
-        imageUrl: imageUrl || null,
+        imageUrl,
         active,
         inStock,
         required,
         sortOrder,
         categoryId: categoryIds[0],
-        categories: {
-  create: categoryIds.map((categoryId: string, index: number) => {
-    const customPriceValue = categoryPricesMap.get(categoryId);
 
-    return {
-      categoryId,
-      sortOrder: index,
-      customPrice:
-        customPriceValue !== undefined ? customPriceValue : null,
-    };
-  }),
-},
+        categories: {
+          create: categoryIds.map((categoryId: string, index: number) => {
+            const customPriceValue = categoryPricesMap.get(categoryId);
+
+            return {
+              categoryId,
+              company_id: companyId,
+              branch_id: branchId,
+              sortOrder: index,
+              customPrice:
+                customPriceValue !== undefined ? customPriceValue : null,
+            };
+          }),
+        },
+
         productAdditionalConfigs: {
           create: validConfigs,
         },
@@ -242,7 +300,7 @@ export async function POST(req: NextRequest) {
         },
         productAdditionalConfigs: {
           orderBy: {
-            sortOrder: "asc",
+            createdAt: "asc",
           },
           include: {
             additional: true,

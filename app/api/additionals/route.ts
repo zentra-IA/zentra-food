@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 
 function makeSlug(value: string) {
   return value
@@ -9,6 +10,27 @@ function makeSlug(value: string) {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
+}
+
+async function resolveBranchId(req: NextRequest, companyId: string) {
+  const cookieBranchId = getBranchId(req);
+
+  if (cookieBranchId) return cookieBranchId;
+
+  const branch = await prisma.branches.findFirst({
+    where: {
+      company_id: companyId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!branch?.id) {
+    throw new Error("Nenhuma filial encontrada para esta empresa");
+  }
+
+  return branch.id;
 }
 
 function normalizeAdditional(additional: any) {
@@ -33,13 +55,51 @@ function normalizeAdditional(additional: any) {
   };
 }
 
-export async function GET() {
+async function generateUniqueSlug(companyId: string, name: string) {
+  const baseSlug = makeSlug(name) || `additional-${Date.now()}`;
+  let slug = baseSlug;
+  let count = 1;
+
+  while (true) {
+    const exists = await prisma.additional.findFirst({
+      where: {
+        company_id: companyId,
+        slug,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!exists) return slug;
+
+    slug = `${baseSlug}-${count}`;
+    count++;
+  }
+}
+
+export async function GET(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const additionals = await prisma.additional.findMany({
+      where: {
+        company_id: companyId,
+      },
       include: {
         categoryLinks: {
+          where: {
+            company_id: companyId,
+          },
           orderBy: {
-            sortOrder: "asc",
+            createdAt: "asc",
           },
           include: {
             category: true,
@@ -51,12 +111,17 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json(additionals.map(normalizeAdditional));
+    return NextResponse.json(additionals.map(normalizeAdditional), {
+      status: 200,
+    });
   } catch (error) {
     console.error("ERRO GET ADDITIONALS:", error);
 
     return NextResponse.json(
-      { error: "Erro ao buscar adicionais" },
+      {
+        error: "Erro ao buscar adicionais",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }
@@ -64,17 +129,36 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
+    const branchId = await resolveBranchId(req, companyId);
     const body = await req.json();
 
     const name = String(body?.name ?? "").trim();
-    const description = body?.description
-      ? String(body.description).trim()
-      : null;
+
+    const description =
+      body?.description !== undefined && body?.description !== null
+        ? String(body.description).trim()
+        : null;
 
     const price = Number(body?.price);
-    const required = Boolean(body?.required ?? false);
-    const active = Boolean(body?.active ?? true);
-    const sortOrder = Number(body?.sortOrder ?? 0);
+
+    const required =
+      body?.required === undefined ? false : Boolean(body.required);
+
+    const active = body?.active === undefined ? true : Boolean(body.active);
+
+    const sortOrder =
+      body?.sortOrder === undefined || body?.sortOrder === null
+        ? 0
+        : Number(body.sortOrder);
 
     const categoryIdsRaw: unknown[] = Array.isArray(body?.categoryIds)
       ? body.categoryIds
@@ -82,22 +166,22 @@ export async function POST(req: NextRequest) {
       ? [body.categoryId]
       : [];
 
-    const categoryIds: string[] = [
+    const categoryIds = [
       ...new Set(
         categoryIdsRaw
           .map((id) => String(id ?? "").trim())
-          .filter((id) => id.length > 0)
+          .filter(Boolean)
       ),
     ];
 
     if (!name) {
       return NextResponse.json(
-        { error: "Nome obrigatório" },
+        { error: "Nome do adicional é obrigatório" },
         { status: 400 }
       );
     }
 
-    if (categoryIds.length === 0) {
+    if (!categoryIds.length) {
       return NextResponse.json(
         { error: "Selecione pelo menos uma categoria" },
         { status: 400 }
@@ -111,9 +195,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (Number.isNaN(sortOrder)) {
+      return NextResponse.json(
+        { error: "Ordem inválida" },
+        { status: 400 }
+      );
+    }
+
     const categories = await prisma.category.findMany({
       where: {
-        id: { in: categoryIds },
+        id: {
+          in: categoryIds,
+        },
+        company_id: companyId,
       },
       select: {
         id: true,
@@ -127,18 +221,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let slug = makeSlug(name) || `additional-${Date.now()}`;
-
-    const exists = await prisma.additional.findUnique({
-      where: { slug },
-    });
-
-    if (exists) {
-      slug = `${slug}-${Date.now()}`;
-    }
+    const slug = await generateUniqueSlug(companyId, name);
 
     const additional = await prisma.additional.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId,
+
         name,
         slug,
         description,
@@ -146,17 +235,19 @@ export async function POST(req: NextRequest) {
         required,
         active,
         sortOrder,
+
         categoryLinks: {
-          create: categoryIds.map((categoryId, index) => ({
+          create: categoryIds.map((categoryId) => ({
+            company_id: companyId,
+            branch_id: branchId,
             categoryId,
-            sortOrder: index,
           })),
         },
       },
       include: {
         categoryLinks: {
           orderBy: {
-            sortOrder: "asc",
+            createdAt: "asc",
           },
           include: {
             category: true,
@@ -165,12 +256,17 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json(normalizeAdditional(additional), { status: 201 });
-  } catch (error: any) {
+    return NextResponse.json(normalizeAdditional(additional), {
+      status: 201,
+    });
+  } catch (error) {
     console.error("ERRO POST ADDITIONAL:", error);
 
     return NextResponse.json(
-      { error: error?.message || "Erro ao criar adicional" },
+      {
+        error: "Erro ao criar adicional",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

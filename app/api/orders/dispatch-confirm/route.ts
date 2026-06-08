@@ -1,24 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 import { RouteMode } from "@prisma/client";
 
 function generateBatchCode() {
   return `LOTE-${Date.now()}`;
 }
 
+async function resolveBranchId(req: NextRequest, companyId: string) {
+  const cookieBranchId = getBranchId(req);
+
+  if (cookieBranchId) return cookieBranchId;
+
+  const branch = await prisma.branches.findFirst({
+    where: {
+      company_id: companyId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return branch?.id || null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    const companyId =
+      getCompanyId(req) ||
+      process.env.DEFAULT_COMPANY_ID ||
+      "b7336aa2-345d-4624-8141-0ea0de084c3d";
+
+    const branchId = await resolveBranchId(req, companyId);
 
     const orderIds = Array.isArray(body?.orderIds)
       ? body.orderIds.map((id: unknown) => String(id).trim()).filter(Boolean)
       : [];
 
     const driverId = String(body?.driverId || "").trim();
-    const mapsUrl =
-      body?.mapsUrl && String(body.mapsUrl).trim() !== ""
-        ? String(body.mapsUrl).trim()
-        : null;
 
     const routeMode: RouteMode =
       body?.routeMode === "FAR_TO_NEAR" ? "FAR_TO_NEAR" : "NEAR_TO_FAR";
@@ -38,7 +59,9 @@ export async function POST(req: NextRequest) {
     }
 
     const driver = await prisma.driver.findUnique({
-      where: { id: driverId },
+      where: {
+        id: driverId,
+      },
     });
 
     if (!driver) {
@@ -48,10 +71,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const finalCompanyId = driver.company_id || companyId;
+    const finalBranchId = driver.branch_id || branchId;
+
     const orders = await prisma.order.findMany({
       where: {
-        id: { in: orderIds },
-        archived: false,
+        id: {
+          in: orderIds,
+        },
       },
       orderBy: {
         createdAt: "asc",
@@ -65,30 +92,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const batchCode = generateBatchCode();
-
     const batch = await prisma.deliveryBatch.create({
       data: {
-        code: batchCode,
-        driverId,
+        company_id: finalCompanyId,
+        branch_id: finalBranchId,
+        code: generateBatchCode(),
         routeMode,
-        mapsUrl,
         status: "ENVIADO",
+        driverId: driver.id,
       },
     });
 
     await Promise.all(
-      orders.map((order, index) =>
+      orders.map((order) =>
         prisma.order.update({
-          where: { id: order.id },
+          where: {
+            id: order.id,
+          },
           data: {
             status: "SAIU_PARA_ENTREGA",
-            archived: false,
-            archivedAt: null,
-            driverId,
+            driverId: driver.id,
             deliveryBatchId: batch.id,
-            deliveryRouteOrder: index + 1,
-            dispatchedAt: new Date(),
           },
         })
       )
@@ -105,7 +129,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error: "Erro ao confirmar despacho",
-        details: error?.message || "Erro desconhecido",
+        details: error?.message || String(error),
       },
       { status: 500 }
     );

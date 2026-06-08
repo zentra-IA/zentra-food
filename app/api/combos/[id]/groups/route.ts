@@ -1,50 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 
 type RouteContext = {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 };
 
-export async function GET(_req: NextRequest, context: RouteContext) {
+const DEFAULT_COMPANY_ID =
+  process.env.DEFAULT_COMPANY_ID || "41edd938-3eb4-420e-9675-2e53703ed70b";
+
+function resolveCompanyId(req: NextRequest) {
+  return req.headers.get("x-company-id") || getCompanyId(req) || DEFAULT_COMPANY_ID;
+}
+
+export async function GET(req: NextRequest, context: RouteContext) {
   try {
+    const companyId = resolveCompanyId(req);
     const { id } = await context.params;
 
-    if (!id) {
-      return NextResponse.json(
-        { error: "ID do combo inválido" },
-        { status: 400 }
-      );
-    }
-
-    const combo = await prisma.combo.findUnique({
-      where: { id },
+    const combo = await prisma.combo.findFirst({
+      where: {
+        id,
+        company_id: companyId,
+      },
       include: {
         groups: {
-          orderBy: {
-            sortOrder: "asc",
+          orderBy: { createdAt: "asc" },
+          include: {
+            items: {
+              orderBy: { createdAt: "asc" },
+              include: { product: true },
+            },
           },
         },
       },
     });
 
     if (!combo) {
-      return NextResponse.json(
-        { error: "Combo não encontrado" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Combo não encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json(combo.groups, { status: 200 });
-  } catch (error) {
-    console.error("ERRO AO BUSCAR GRUPOS DO COMBO:", error);
-
+    return NextResponse.json(combo.groups);
+  } catch (error: any) {
     return NextResponse.json(
-      {
-        error: "Erro ao buscar grupos do combo",
-        details: error instanceof Error ? error.message : String(error),
-      },
+      { error: "Erro ao buscar grupos", details: error.message },
       { status: 500 }
     );
   }
@@ -52,52 +51,29 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
 export async function POST(req: NextRequest, context: RouteContext) {
   try {
+    const companyId = resolveCompanyId(req);
+    const branchId = getBranchId(req);
     const { id } = await context.params;
     const body = await req.json();
 
-    if (!id) {
-      return NextResponse.json(
-        { error: "ID do combo inválido" },
-        { status: 400 }
-      );
-    }
-
-    const combo = await prisma.combo.findUnique({
-      where: { id },
+    const combo = await prisma.combo.findFirst({
+      where: {
+        id,
+        company_id: companyId,
+      },
     });
 
     if (!combo) {
-      return NextResponse.json(
-        { error: "Combo não encontrado" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Combo não encontrado" }, { status: 404 });
     }
 
     const name = String(body?.name || "").trim();
-    const minSelect = Number(body?.minSelect ?? 0);
+    const minSelect = Number(body?.minSelect ?? 1);
     const maxSelect = Number(body?.maxSelect ?? 1);
-    const sortOrder = Number(body?.sortOrder ?? 0);
-    const required = Boolean(body?.required);
+    const required = body?.required === undefined ? true : Boolean(body.required);
 
     if (!name) {
-      return NextResponse.json(
-        { error: "Nome do grupo é obrigatório" },
-        { status: 400 }
-      );
-    }
-
-    if (Number.isNaN(minSelect) || minSelect < 0) {
-      return NextResponse.json(
-        { error: "Mínimo de seleção inválido" },
-        { status: 400 }
-      );
-    }
-
-    if (Number.isNaN(maxSelect) || maxSelect < 1) {
-      return NextResponse.json(
-        { error: "Máximo de seleção inválido" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Nome do grupo é obrigatório" }, { status: 400 });
     }
 
     if (minSelect > maxSelect) {
@@ -107,33 +83,22 @@ export async function POST(req: NextRequest, context: RouteContext) {
       );
     }
 
-    if (Number.isNaN(sortOrder)) {
-      return NextResponse.json(
-        { error: "Ordem inválida" },
-        { status: 400 }
-      );
-    }
-
     const group = await prisma.comboGroup.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId || combo.branch_id || null,
+        comboId: combo.id,
         name,
+        required,
         minSelect,
         maxSelect,
-        sortOrder,
-        required,
-        comboId: id,
       },
     });
 
-    return NextResponse.json(group, { status: 201 });
-  } catch (error) {
-    console.error("ERRO AO CRIAR GRUPO:", error);
-
+    return NextResponse.json({ ...group, items: [] }, { status: 201 });
+  } catch (error: any) {
     return NextResponse.json(
-      {
-        error: "Erro ao criar grupo",
-        details: error instanceof Error ? error.message : String(error),
-      },
+      { error: "Erro ao criar grupo", details: error.message },
       { status: 500 }
     );
   }

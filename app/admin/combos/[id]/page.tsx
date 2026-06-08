@@ -53,6 +53,12 @@ export default function ComboGroupsPage({
   const [form, setForm] = useState<GroupForm>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  function getCompanyId() {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("active_company_id") || "";
+  }
 
   useEffect(() => {
     async function resolveParams() {
@@ -65,35 +71,54 @@ export default function ComboGroupsPage({
 
   useEffect(() => {
     if (!comboId) return;
-    loadCombo();
-    loadGroups();
+    loadComboAndGroups();
   }, [comboId]);
 
-  async function loadCombo() {
+  async function loadComboAndGroups() {
     try {
-      const res = await fetch("/api/combos", { cache: "no-store" });
-      const data = await res.json().catch(() => []);
-      const found = Array.isArray(data)
-        ? data.find((item: Combo) => item.id === comboId)
-        : null;
+      setLoading(true);
 
-      setCombo(found || null);
+      const headers = {
+        "x-company-id": getCompanyId(),
+      };
+
+      const [combosRes, groupsRes] = await Promise.all([
+        fetch("/api/combos", {
+          cache: "no-store",
+          headers,
+        }),
+        fetch(`/api/combos/${comboId}/groups`, {
+          cache: "no-store",
+          headers,
+        }),
+      ]);
+
+      const combosData = await combosRes.json().catch(() => []);
+      const groupsData = await groupsRes.json().catch(() => []);
+
+      if (!combosRes.ok) {
+        console.error("ERRO COMBOS:", combosData);
+        setCombo(null);
+      } else {
+        const found = Array.isArray(combosData)
+          ? combosData.find((item: Combo) => item.id === comboId)
+          : null;
+
+        setCombo(found || null);
+      }
+
+      if (!groupsRes.ok) {
+        console.error("ERRO GROUPS:", groupsData);
+        setGroups([]);
+      } else {
+        setGroups(Array.isArray(groupsData) ? groupsData : []);
+      }
     } catch (error) {
-      console.error("Erro ao carregar combo:", error);
+      console.error("Erro ao carregar combo/grupos:", error);
       setCombo(null);
-    }
-  }
-
-  async function loadGroups() {
-    try {
-      const res = await fetch(`/api/combos/${comboId}/groups`, {
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => []);
-      setGroups(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Erro ao carregar grupos:", error);
       setGroups([]);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -110,24 +135,35 @@ export default function ComboGroupsPage({
       return;
     }
 
+    const minSelect = Number(form.minSelect);
+    const maxSelect = Number(form.maxSelect);
+    const sortOrder = Number(form.sortOrder || 0);
+
     if (
-      Number.isNaN(Number(form.minSelect)) ||
-      Number.isNaN(Number(form.maxSelect))
+      Number.isNaN(minSelect) ||
+      Number.isNaN(maxSelect) ||
+      minSelect < 0 ||
+      maxSelect < 1
     ) {
       alert("Mínimo ou máximo inválido");
       return;
     }
 
-    const payload = {
-      name: form.name.trim(),
-      required: Boolean(form.required),
-      minSelect: Number(form.minSelect),
-      maxSelect: Number(form.maxSelect),
-      sortOrder: Number(form.sortOrder || 0),
-    };
+    if (minSelect > maxSelect) {
+      alert("O mínimo não pode ser maior que o máximo");
+      return;
+    }
 
     try {
       setSaving(true);
+
+      const payload = {
+        name: form.name.trim(),
+        required: Boolean(form.required),
+        minSelect,
+        maxSelect,
+        sortOrder: Number.isNaN(sortOrder) ? 0 : sortOrder,
+      };
 
       const url = editingId
         ? `/api/combo-groups/${editingId}`
@@ -139,6 +175,7 @@ export default function ComboGroupsPage({
         method,
         headers: {
           "Content-Type": "application/json",
+          "x-company-id": getCompanyId(),
         },
         body: JSON.stringify(payload),
       });
@@ -146,13 +183,25 @@ export default function ComboGroupsPage({
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        alert(data?.details || data?.error || "Erro ao salvar grupo");
+        console.error("ERRO API GROUP:", data);
+
+        alert(
+          `${data?.error || "Erro ao salvar grupo"}${
+            data?.details ? `\n\nDetalhes: ${data.details}` : ""
+          }`
+        );
+
         return;
       }
 
       resetForm();
-      await loadGroups();
-      alert(editingId ? "Grupo atualizado com sucesso!" : "Grupo criado com sucesso!");
+      await loadComboAndGroups();
+
+      alert(
+        editingId
+          ? "Grupo atualizado com sucesso!"
+          : "Grupo criado com sucesso!"
+      );
     } catch (error) {
       console.error("Erro ao salvar grupo:", error);
       alert("Erro ao salvar grupo");
@@ -163,6 +212,7 @@ export default function ComboGroupsPage({
 
   function handleEdit(group: ComboGroup) {
     setEditingId(group.id);
+
     setForm({
       name: group.name || "",
       required: Boolean(group.required),
@@ -171,7 +221,10 @@ export default function ComboGroupsPage({
       sortOrder: String(group.sortOrder ?? 0),
     });
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   async function handleDelete(id: string) {
@@ -181,16 +234,26 @@ export default function ComboGroupsPage({
     try {
       const res = await fetch(`/api/combo-groups/${id}`, {
         method: "DELETE",
+        headers: {
+          "x-company-id": getCompanyId(),
+        },
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        alert(data?.details || data?.error || "Erro ao excluir grupo");
+        console.error("ERRO DELETE GROUP:", data);
+
+        alert(
+          `${data?.error || "Erro ao excluir grupo"}${
+            data?.details ? `\n\nDetalhes: ${data.details}` : ""
+          }`
+        );
+
         return;
       }
 
-      await loadGroups();
+      await loadComboAndGroups();
       alert("Grupo excluído com sucesso!");
     } catch (error) {
       console.error("Erro ao excluir grupo:", error);
@@ -199,171 +262,246 @@ export default function ComboGroupsPage({
   }
 
   return (
-    <main className="p-10">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Grupos do Combo</h1>
-          <p className="text-gray-600">
-            {combo ? `Combo: ${combo.name}` : "Carregando combo..."}
-          </p>
+    <main className="min-h-screen bg-slate-50 p-3 text-slate-900 md:p-8">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-red-600">Zentra Food</p>
+            <h1 className="text-2xl font-black tracking-tight md:text-4xl">
+              Grupos do Combo
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {combo ? `Combo: ${combo.name}` : "Carregando combo..."}
+            </p>
+          </div>
+
+          <Link
+            href="/admin/combos"
+            className="w-full rounded-2xl bg-slate-800 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-slate-900 sm:w-auto"
+          >
+            Voltar para combos
+          </Link>
         </div>
 
-        <Link
-          href="/admin/combos"
-          className="rounded bg-gray-700 px-4 py-2 text-white"
-        >
-          Voltar
-        </Link>
-      </div>
-
-      <div className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">
-          {editingId ? "Editar grupo" : "Criar grupo"}
-        </h2>
-
-        <form onSubmit={handleSubmit} className="grid gap-3">
-          <input
-            type="text"
-            placeholder="Nome do grupo"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="rounded border px-3 py-2"
-          />
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Mínimo de seleção
-              </label>
-              <input
-                type="number"
-                placeholder="Mínimo"
-                value={form.minSelect}
-                onChange={(e) => setForm({ ...form, minSelect: e.target.value })}
-                className="w-full rounded border px-3 py-2"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Máximo de seleção
-              </label>
-              <input
-                type="number"
-                placeholder="Máximo"
-                value={form.maxSelect}
-                onChange={(e) => setForm({ ...form, maxSelect: e.target.value })}
-                className="w-full rounded border px-3 py-2"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Ordem
-              </label>
-              <input
-                type="number"
-                placeholder="Ordem"
-                value={form.sortOrder}
-                onChange={(e) => setForm({ ...form, sortOrder: e.target.value })}
-                className="w-full rounded border px-3 py-2"
-              />
-            </div>
+        <section className="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+          <div className="mb-5">
+            <h2 className="text-xl font-black">
+              {editingId ? "Editar grupo" : "Criar grupo"}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Grupos controlam quantos itens o cliente pode escolher dentro do combo.
+            </p>
           </div>
 
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={form.required}
-              onChange={(e) =>
-                setForm({ ...form, required: e.target.checked })
-              }
-            />
-            Grupo obrigatório
-          </label>
+          <form onSubmit={handleSubmit} className="grid gap-4">
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                Nome do grupo
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Escolha sua pizza"
+                value={form.name}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    name: e.target.value,
+                  })
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+              />
+            </div>
 
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-            >
-              {saving
-                ? editingId
-                  ? "Salvando..."
-                  : "Criando..."
-                : editingId
-                ? "Salvar grupo"
-                : "Criar grupo"}
-            </button>
-
-            {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded bg-gray-500 px-4 py-2 text-white"
-              >
-                Cancelar
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-
-      <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">Grupos cadastrados</h2>
-
-        {groups.length === 0 ? (
-          <p className="text-gray-500">Nenhum grupo cadastrado.</p>
-        ) : (
-          <div className="space-y-3">
-            {groups.map((group) => (
-              <div
-                key={group.id}
-                className="rounded border p-3"
-              >
-                <p className="font-semibold">{group.name}</p>
-                <p className="text-sm text-gray-500">
-                  Obrigatório: {group.required ? "Sim" : "Não"}
-                </p>
-                <p className="text-sm text-gray-500">
-                  Mínimo: {group.minSelect} • Máximo: {group.maxSelect}
-                </p>
-                <p className="text-sm text-gray-500">
-                  Ordem: {group.sortOrder}
-                </p>
-                <p className="text-sm text-gray-500">
-                  Itens no grupo: {group.items?.length || 0}
-                </p>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(group)}
-                    className="rounded bg-yellow-600 px-3 py-1 text-white"
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(group.id)}
-                    className="rounded bg-red-600 px-3 py-1 text-white"
-                  >
-                    Excluir
-                  </button>
-
-                  <Link
-                    href={`/admin/combo-groups/${group.id}/items`}
-                    className="rounded bg-blue-600 px-3 py-1 text-white"
-                  >
-                    Configurar itens
-                  </Link>
-                </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Mínimo
+                </label>
+                <input
+                  type="number"
+                  value={form.minSelect}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      minSelect: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                />
               </div>
-            ))}
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Máximo
+                </label>
+                <input
+                  type="number"
+                  value={form.maxSelect}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      maxSelect: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Ordem
+                </label>
+                <input
+                  type="number"
+                  value={form.sortOrder}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      sortOrder: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.required}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    required: e.target.checked,
+                  })
+                }
+                className="h-5 w-5"
+              />
+              Grupo obrigatório
+            </label>
+
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-2xl bg-red-600 px-5 py-3 text-sm font-black text-white transition hover:bg-red-700 disabled:opacity-50 sm:w-auto"
+              >
+                {saving
+                  ? "Salvando..."
+                  : editingId
+                  ? "Salvar grupo"
+                  : "Criar grupo"}
+              </button>
+
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="w-full rounded-2xl bg-slate-200 px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-300 sm:w-auto"
+                >
+                  Cancelar edição
+                </button>
+              )}
+            </div>
+          </form>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+          <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-black">Grupos cadastrados</h2>
+              <p className="text-sm text-slate-500">
+                {groups.length} grupo(s) configurado(s).
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={loadComboAndGroups}
+              disabled={loading}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-50 sm:w-auto"
+            >
+              {loading ? "Atualizando..." : "Atualizar"}
+            </button>
           </div>
-        )}
+
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
+              Carregando grupos...
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
+              Nenhum grupo cadastrado ainda.
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {groups.map((group) => (
+                <article
+                  key={group.id}
+                  className="rounded-3xl border border-slate-200 bg-slate-50 p-4 transition hover:border-red-200 hover:bg-white hover:shadow-sm"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900">
+                        {group.name}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {group.items?.length || 0} item(ns) configurado(s)
+                      </p>
+                    </div>
+
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-black ${
+                        group.required
+                          ? "bg-red-100 text-red-700"
+                          : "bg-slate-200 text-slate-500"
+                      }`}
+                    >
+                      {group.required ? "Obrigatório" : "Opcional"}
+                    </span>
+                  </div>
+
+                  <div className="mb-4 grid gap-2 text-sm text-slate-600">
+                    <p>
+                      <strong>Mínimo:</strong> {group.minSelect}
+                    </p>
+                    <p>
+                      <strong>Máximo:</strong> {group.maxSelect}
+                    </p>
+                    <p>
+                      <strong>Ordem:</strong> {group.sortOrder}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(group)}
+                      className="w-full rounded-2xl bg-yellow-500 px-4 py-3 text-sm font-black text-white transition hover:bg-yellow-600 sm:w-auto"
+                    >
+                      Editar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(group.id)}
+                      className="w-full rounded-2xl bg-red-600 px-4 py-3 text-sm font-black text-white transition hover:bg-red-700 sm:w-auto"
+                    >
+                      Excluir
+                    </button>
+
+                    <Link
+                      href={`/admin/combo-groups/${group.id}/items`}
+                      className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-center text-sm font-black text-white transition hover:bg-blue-700 sm:w-auto"
+                    >
+                      Itens
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );

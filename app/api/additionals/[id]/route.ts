@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 
 function makeSlug(value: string) {
   return value
@@ -9,6 +10,19 @@ function makeSlug(value: string) {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
+}
+
+async function resolveBranchId(req: NextRequest, companyId: string) {
+  const cookieBranchId = getBranchId(req);
+
+  if (cookieBranchId) return cookieBranchId;
+
+  const branch = await prisma.branches.findFirst({
+    where: { company_id: companyId },
+    select: { id: true },
+  });
+
+  return branch?.id || null;
 }
 
 function normalizeAdditional(additional: any) {
@@ -41,6 +55,16 @@ type RouteContext = {
 
 export async function PUT(req: NextRequest, context: RouteContext) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
+    const branchId = await resolveBranchId(req, companyId);
     const { id } = await context.params;
     const body = await req.json();
 
@@ -52,12 +76,9 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         : null;
 
     const price = Number(body?.price);
-
     const required =
       body?.required === undefined ? false : Boolean(body.required);
-
-    const active =
-      body?.active === undefined ? true : Boolean(body.active);
+    const active = body?.active === undefined ? true : Boolean(body.active);
 
     const sortOrder =
       body?.sortOrder === undefined || body?.sortOrder === null
@@ -70,11 +91,11 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       ? [body.categoryId]
       : [];
 
-    const categoryIds: string[] = [
+    const categoryIds = [
       ...new Set(
         categoryIdsRaw
           .map((item) => String(item ?? "").trim())
-          .filter((item) => item.length > 0)
+          .filter(Boolean)
       ),
     ];
 
@@ -89,7 +110,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       );
     }
 
-    if (categoryIds.length === 0) {
+    if (!categoryIds.length) {
       return NextResponse.json(
         { error: "Selecione pelo menos uma categoria" },
         { status: 400 }
@@ -97,14 +118,14 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     }
 
     if (Number.isNaN(price) || price < 0) {
-      return NextResponse.json(
-        { error: "Preço inválido" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Preço inválido" }, { status: 400 });
     }
 
-    const existing = await prisma.additional.findUnique({
-      where: { id },
+    const existing = await prisma.additional.findFirst({
+      where: {
+        id,
+        company_id: companyId,
+      },
     });
 
     if (!existing) {
@@ -119,6 +140,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         id: {
           in: categoryIds,
         },
+        company_id: companyId,
       },
       select: {
         id: true,
@@ -132,13 +154,18 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       );
     }
 
-    let slug = makeSlug(name);
-    if (!slug) slug = `additional-${Date.now()}`;
+    let slug = makeSlug(name) || `additional-${Date.now()}`;
 
     const duplicate = await prisma.additional.findFirst({
       where: {
-        id: { not: id },
+        id: {
+          not: id,
+        },
+        company_id: companyId,
         slug,
+      },
+      select: {
+        id: true,
       },
     });
 
@@ -147,7 +174,9 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     }
 
     const updated = await prisma.additional.update({
-      where: { id },
+      where: {
+        id,
+      },
       data: {
         name,
         slug,
@@ -156,18 +185,20 @@ export async function PUT(req: NextRequest, context: RouteContext) {
         required,
         active,
         sortOrder: Number.isNaN(sortOrder) ? 0 : sortOrder,
+
         categoryLinks: {
           deleteMany: {},
-          create: categoryIds.map((categoryId, index) => ({
+          create: categoryIds.map((categoryId) => ({
+            company_id: companyId,
+            branch_id: branchId,
             categoryId,
-            sortOrder: index,
           })),
         },
       },
       include: {
         categoryLinks: {
           orderBy: {
-            sortOrder: "asc",
+            createdAt: "asc",
           },
           include: {
             category: true,
@@ -177,29 +208,41 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json(normalizeAdditional(updated), { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("ERRO PUT ADDITIONAL:", error);
 
     return NextResponse.json(
       {
         error: "Erro ao editar adicional",
-        details: error?.message || "Erro desconhecido",
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE(_req: NextRequest, context: RouteContext) {
+export async function DELETE(req: NextRequest, context: RouteContext) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const { id } = await context.params;
 
     if (!id) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 
-    const existing = await prisma.additional.findUnique({
-      where: { id },
+    const existing = await prisma.additional.findFirst({
+      where: {
+        id,
+        company_id: companyId,
+      },
     });
 
     if (!existing) {
@@ -210,17 +253,19 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     }
 
     await prisma.additional.delete({
-      where: { id },
+      where: {
+        id,
+      },
     });
 
     return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error("ERRO DELETE ADDITIONAL:", error);
 
     return NextResponse.json(
       {
         error: "Erro ao excluir adicional",
-        details: error?.message || "Erro desconhecido",
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );

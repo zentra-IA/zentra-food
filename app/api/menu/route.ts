@@ -1,14 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId } from "@/lib/server-company";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const categories = await prisma.category.findMany({
       where: {
         active: true,
+        company_id: companyId,
       },
       orderBy: {
         sortOrder: "asc",
@@ -22,9 +33,10 @@ export async function GET() {
         selectionRequired: true,
         active: true,
         sortOrder: true,
+
         additionalLinks: {
           orderBy: {
-            sortOrder: "asc",
+            createdAt: "asc",
           },
           select: {
             additional: {
@@ -41,7 +53,11 @@ export async function GET() {
             },
           },
         },
+
         productLinks: {
+          where: {
+            company_id: companyId,
+          },
           orderBy: {
             sortOrder: "asc",
           },
@@ -59,14 +75,17 @@ export async function GET() {
                 imageUrl: true,
                 active: true,
                 inStock: true,
+
                 productAdditionalConfigs: {
+                  where: {
+                    company_id: companyId,
+                  },
                   orderBy: {
-                    sortOrder: "asc",
+                    createdAt: "asc",
                   },
                   select: {
                     additionalId: true,
                     required: true,
-                    sortOrder: true,
                     additional: {
                       select: {
                         id: true,
@@ -94,22 +113,33 @@ export async function GET() {
         .filter((additional) => additional && additional.active);
 
       const products = (category.productLinks || [])
-  .filter((link) => link.product && link.product.active && link.product.inStock)
-  .map((link) => {
-    const basePrice = Number(link.product.price || 0);
-    const customPrice =
-      link.customPrice !== null && link.customPrice !== undefined
-        ? Number(link.customPrice)
-        : null;
+        .filter(
+          (link) =>
+            link.product &&
+            link.product.active &&
+            link.product.inStock
+        )
+        .map((link) => {
+          const basePrice = Number(link.product.price || 0);
 
-    return {
-      ...link.product,
-      categoryPrice: customPrice ?? basePrice,
-      productAdditionalConfigs: (link.product.productAdditionalConfigs || []).filter(
-        (config) => config.additional?.active !== false
-      ),
-    };
-  });
+          const customPrice =
+            link.customPrice !== null && link.customPrice !== undefined
+              ? Number(link.customPrice)
+              : null;
+
+          return {
+            ...link.product,
+            categoryPrice: customPrice ?? basePrice,
+            productAdditionalConfigs: (
+              link.product.productAdditionalConfigs || []
+            )
+              .filter((config) => config.additional?.active !== false)
+              .map((config, index) => ({
+                ...config,
+                sortOrder: index,
+              })),
+          };
+        });
 
       return {
         id: category.id,

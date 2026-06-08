@@ -765,38 +765,77 @@ const data = await res.json().catch(() => null);
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 p-4 text-black">
-      <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="space-y-4">
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h1 className="text-2xl font-bold">PDV • Balcão</h1>
-            <p className="text-sm text-gray-500">
-              Atendimento rápido para balcão, telefone e retirada.
-            </p>
+    <main className="min-h-screen bg-[#f5f5f7] p-3 text-zinc-950 md:p-6">
+      <div className="mx-auto max-w-[1500px]">
+        <div className="mb-5 overflow-hidden rounded-[2rem] bg-gradient-to-r from-zinc-950 via-zinc-900 to-red-700 p-5 text-white shadow-2xl md:p-7">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.25em] text-red-200">
+                Zentra Food
+              </p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight md:text-5xl">
+                PDV • Caixa rápido
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-zinc-200 md:text-base">
+                Atendimento para balcão, telefone, retirada e entrega com fluxo rápido.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 rounded-3xl bg-white/10 p-2 backdrop-blur md:min-w-[360px]">
+              <div className="rounded-2xl bg-white/10 p-3 text-center">
+                <p className="text-xs text-zinc-300">Itens</p>
+                <p className="text-xl font-black">{cart.length}</p>
+              </div>
+              <div className="rounded-2xl bg-white/10 p-3 text-center">
+                <p className="text-xs text-zinc-300">Subtotal</p>
+                <p className="text-xl font-black">{toBRL(subtotal)}</p>
+              </div>
+              <div className="rounded-2xl bg-red-600 p-3 text-center shadow-lg">
+                <p className="text-xs text-red-100">Total</p>
+                <p className="text-xl font-black">{toBRL(total)}</p>
+              </div>
+            </div>
           </div>
+        </div>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold">Buscar cliente</h2>
+        <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+        <section className="space-y-5">
+          
 
-            <div className="flex gap-2">
+          <div className="rounded-[2rem] border border-zinc-200 bg-white p-4 shadow-sm md:p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
+                  Cliente
+                </p>
+                <h2 className="text-xl font-black">Buscar ou cadastrar</h2>
+              </div>
+              {selectedCustomer && (
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
+                  Cliente selecionado
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 type="text"
                 placeholder="CPF, WhatsApp ou nome"
                 value={customerSearch}
                 onChange={(e) => setCustomerSearch(e.target.value)}
-                className="w-full rounded-xl border px-4 py-3 outline-none"
+                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <button
                 type="button"
                 onClick={resetCustomer}
-                className="rounded-xl border px-4 py-3 font-semibold"
+                className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-black transition hover:bg-zinc-100"
               >
                 Novo
               </button>
             </div>
 
             {loadingSearch && (
-              <p className="mt-2 text-sm text-gray-500">Buscando...</p>
+              <p className="mt-2 text-sm text-zinc-500">Buscando...</p>
             )}
 
             {Array.isArray(results) && results.length > 0 && (
@@ -806,13 +845,13 @@ const data = await res.json().catch(() => null);
                     key={c.id}
                     type="button"
                     onClick={() => applyCustomer(c)}
-                    className="block w-full rounded-xl border p-3 text-left hover:bg-gray-50"
+                    className="block w-full rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-left transition hover:border-red-200 hover:bg-white"
                   >
-                    <div className="font-semibold">{c.name}</div>
-                    <div className="text-sm text-gray-500">
+                    <div className="font-black">{c.name}</div>
+                    <div className="text-sm text-zinc-500">
                       CPF: {c.cpf || "-"} • WhatsApp: {c.whatsapp || "-"}
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-zinc-500">
                       {c.address || "-"} {c.number ? `, ${c.number}` : ""}{" "}
                       {c.neighborhood ? `- ${c.neighborhood}` : ""}
                     </div>
@@ -822,17 +861,24 @@ const data = await res.json().catch(() => null);
             )}
           </div>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold">Dados do cliente</h2>
+          <div className="rounded-[2rem] border border-zinc-200 bg-white p-4 shadow-sm md:p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
+                  Cadastro
+                </p>
+                <h2 className="text-xl font-black">Dados do cliente</h2>
+              </div>
+            </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               <input
                 placeholder="Nome"
                 value={customerForm.name}
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, name: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="CPF"
@@ -840,7 +886,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, cpf: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="WhatsApp"
@@ -848,7 +894,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, whatsapp: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="Email"
@@ -856,7 +902,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, email: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="CEP"
@@ -864,7 +910,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, cep: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="Endereço"
@@ -872,7 +918,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, address: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="Número"
@@ -880,7 +926,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, number: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="Complemento"
@@ -888,7 +934,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, complement: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="Bairro"
@@ -899,7 +945,7 @@ const data = await res.json().catch(() => null);
                     neighborhood: e.target.value,
                   }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
               <input
                 placeholder="Cidade"
@@ -907,7 +953,7 @@ const data = await res.json().catch(() => null);
                 onChange={(e) =>
                   setCustomerForm((prev) => ({ ...prev, city: e.target.value }))
                 }
-                className="rounded-xl border px-4 py-3 outline-none"
+                className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
               />
             </div>
 
@@ -915,25 +961,32 @@ const data = await res.json().catch(() => null);
               type="button"
               onClick={saveCustomer}
               disabled={savingCustomer}
-              className="mt-4 rounded-xl bg-black px-4 py-3 font-semibold text-white disabled:opacity-50"
+              className="mt-4 rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-black text-white shadow-lg transition hover:bg-zinc-800 disabled:opacity-50"
             >
               {savingCustomer ? "Salvando..." : "Salvar cliente"}
             </button>
           </div>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold">Produtos e combos</h2>
+          <div className="rounded-[2rem] border border-zinc-200 bg-white p-4 shadow-sm md:p-5">
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
+                  Catálogo
+                </p>
+                <h2 className="text-xl font-black">Produtos e combos</h2>
+              </div>
+            </div>
 
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
               {categories.map((category) => (
                 <button
                   key={category.id}
                   type="button"
                   onClick={() => setSelectedCategoryId(category.id)}
-                  className={`rounded-xl border px-4 py-2 font-semibold ${
+                  className={`shrink-0 rounded-full px-5 py-3 text-sm font-black transition-all ${
                     selectedCategoryId === category.id
-                      ? "border-red-600 bg-red-600 text-white"
-                      : "border-red-200 bg-white text-red-600"
+                      ? "bg-red-600 text-white shadow-lg shadow-red-200"
+                      : "border border-zinc-200 bg-white text-zinc-700 hover:border-red-300 hover:text-red-600"
                   }`}
                 >
                   {category.name}
@@ -946,32 +999,32 @@ const data = await res.json().catch(() => null);
               placeholder="Buscar produto ou combo"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="mb-4 w-full rounded-xl border px-4 py-3 outline-none"
+              className="mb-5 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm outline-none transition focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100"
             />
 
             {selectedCategory && (
-              <div className="mb-4 rounded-xl border p-3">
-                <div className="font-semibold">{selectedCategory.name}</div>
+              <div className="mb-5 rounded-3xl border border-zinc-200 bg-zinc-50 p-4">
+                <div className="font-black">{selectedCategory.name}</div>
                 {selectedCategory.description && (
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-zinc-500">
                     {selectedCategory.description}
                   </div>
                 )}
 
                 {isHalfHalfCategory && (
-                  <div className="mt-3 rounded-xl border border-red-200 bg-white p-3">
-                    <p className="font-semibold">
+                  <div className="mt-3 rounded-3xl border border-red-200 bg-white p-4 shadow-sm">
+                    <p className="font-black">
                       Escolha 2 sabores para montar a pizza meio a meio.
                     </p>
 
-                    <div className="mt-2 text-sm text-gray-700">
+                    <div className="mt-2 text-sm text-zinc-700">
                       Selecionados:{" "}
                       {selectedFlavors.length === 0
                         ? "nenhum"
                         : selectedFlavors.map((flavor) => flavor.name).join(" + ")}
                     </div>
 
-                    <div className="mt-2 text-sm font-bold text-red-600">
+                    <div className="mt-2 text-sm font-black text-red-600">
                       Valor atual: {toBRL(getHalfHalfPrice())}
                     </div>
 
@@ -979,7 +1032,7 @@ const data = await res.json().catch(() => null);
                       type="button"
                       onClick={addHalfHalfToCart}
                       disabled={selectedFlavors.length !== 2}
-                      className="mt-3 rounded-xl border border-red-600 bg-red-600 px-4 py-2 font-bold text-white disabled:opacity-50"
+                      className="mt-3 rounded-2xl border border-red-600 bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg transition hover:bg-red-700 disabled:opacity-50"
                     >
                       Adicionar pizza meio a meio
                     </button>
@@ -989,8 +1042,8 @@ const data = await res.json().catch(() => null);
             )}
 
             <div className="mb-6">
-              <h3 className="mb-2 font-bold">Produtos</h3>
-              <div className="grid gap-3 md:grid-cols-2">
+              <h3 className="mb-3 text-lg font-black">Produtos</h3>
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                 {filteredProducts.map((product) => {
                   const hasAdditionals = hasAdditionalsForProduct(
                     product,
@@ -1001,18 +1054,18 @@ const data = await res.json().catch(() => null);
                   return (
                     <div
                       key={product.id}
-                      className="rounded-2xl border bg-white p-4"
+                      className="group rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:border-red-200 hover:shadow-xl"
                     >
-                      <div className="font-bold">{product.name}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="font-black">{product.name}</div>
+                      <div className="text-sm text-zinc-500">
                         {product.description}
                       </div>
-                      <div className="mt-2 font-bold text-red-600">
+                      <div className="mt-3 text-lg font-black text-red-600">
                         {toBRL(Number(product.price))}
                       </div>
 
                       {hasAdditionals && !isHalfHalfCategory && (
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="mt-1 text-xs font-semibold text-zinc-500">
                           Possui adicionais
                         </div>
                       )}
@@ -1022,7 +1075,7 @@ const data = await res.json().catch(() => null);
                           <button
                             type="button"
                             onClick={() => toggleFlavor(product)}
-                            className={`rounded-xl border px-4 py-2 font-bold ${
+                            className={`rounded-2xl border px-4 py-2 text-sm font-black transition ${
                               flavorSelected
                                 ? "border-red-600 bg-red-600 text-white"
                                 : "border-red-200 bg-white text-red-600"
@@ -1034,7 +1087,7 @@ const data = await res.json().catch(() => null);
                           <button
                             type="button"
                             onClick={() => openProductOptions(product, selectedCategory)}
-                            className="rounded-xl border border-red-600 bg-red-600 px-4 py-2 font-bold text-white"
+                            className="rounded-2xl border border-red-600 bg-red-600 px-4 py-2 text-sm font-black text-white shadow-md transition hover:bg-red-700"
                           >
                             Adicionar
                           </button>
@@ -1042,7 +1095,7 @@ const data = await res.json().catch(() => null);
                           <button
                             type="button"
                             onClick={() => addToCart(product, selectedCategory)}
-                            className="rounded-xl border border-red-600 bg-red-600 px-4 py-2 font-bold text-white"
+                            className="rounded-2xl border border-red-600 bg-red-600 px-4 py-2 text-sm font-black text-white shadow-md transition hover:bg-red-700"
                           >
                             Adicionar
                           </button>
@@ -1053,7 +1106,7 @@ const data = await res.json().catch(() => null);
                 })}
 
                 {filteredProducts.length === 0 && (
-                  <div className="rounded-2xl border p-4 text-sm text-gray-500">
+                  <div className="rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm text-zinc-500">
                     Nenhum produto encontrado.
                   </div>
                 )}
@@ -1061,27 +1114,27 @@ const data = await res.json().catch(() => null);
             </div>
 
             <div>
-              <h3 className="mb-2 font-bold">Combos</h3>
-              <div className="grid gap-3 md:grid-cols-2">
+              <h3 className="mb-3 text-lg font-black">Combos</h3>
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                 {filteredCombos.map((combo) => (
                   <button
                     key={combo.id}
                     type="button"
                     onClick={() => addCombo(combo)}
-                    className="rounded-2xl border bg-white p-4 text-left hover:bg-gray-50"
+                    className="group rounded-3xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-1 hover:border-red-200 hover:shadow-xl"
                   >
-                    <div className="font-bold">{combo.name}</div>
-                    <div className="text-sm text-gray-500">
+                    <div className="font-black">{combo.name}</div>
+                    <div className="text-sm text-zinc-500">
                       {combo.description}
                     </div>
-                    <div className="mt-2 font-bold text-red-600">
+                    <div className="mt-3 text-lg font-black text-red-600">
                       {toBRL(Number(combo.price))}
                     </div>
                   </button>
                 ))}
 
                 {filteredCombos.length === 0 && (
-                  <div className="rounded-2xl border p-4 text-sm text-gray-500">
+                  <div className="rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm text-zinc-500">
                     Nenhum combo encontrado.
                   </div>
                 )}
@@ -1091,94 +1144,129 @@ const data = await res.json().catch(() => null);
         </section>
 
         <aside className="space-y-4">
-          <div className="sticky top-4 rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold">Pedido</h2>
+          <div className="sticky top-4 overflow-hidden rounded-[2rem] bg-zinc-950 p-4 text-white shadow-2xl md:p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-red-300">
+                  Caixa
+                </p>
+                <h2 className="text-2xl font-black">Pedido</h2>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-zinc-200">
+                {cart.length} itens
+              </span>
+            </div>
 
             <div className="grid gap-3">
-              <select
-                value={orderType}
-                onChange={(e) =>
-                  setOrderType(
-                    e.target.value as "DELIVERY" | "PICKUP" | "DINE_IN"
-                  )
-                }
-                className="rounded-xl border px-4 py-3 outline-none"
-              >
-                <option value="DELIVERY">Entrega</option>
-                <option value="PICKUP">Retirada</option>
-                <option value="DINE_IN">Consumir no local</option>
-              </select>
+              <div>
+                <label className="mb-1 block text-xs font-black uppercase tracking-wide text-zinc-400">
+                  Tipo do pedido
+                </label>
+                <select
+                  value={orderType}
+                  onChange={(e) =>
+                    setOrderType(
+                      e.target.value as "DELIVERY" | "PICKUP" | "DINE_IN"
+                    )
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-bold text-zinc-950 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-950/30"
+                >
+                  <option value="DELIVERY">Entrega</option>
+                  <option value="PICKUP">Retirada</option>
+                  <option value="DINE_IN">Consumir no local</option>
+                </select>
+              </div>
 
-              <select
-                value={paymentMethod}
-                onChange={(e) =>
-                  setPaymentMethod(
-                    e.target.value as "PIX" | "DINHEIRO" | "DEBITO" | "CREDITO"
-                  )
-                }
-                className="rounded-xl border px-4 py-3 outline-none"
-              >
-                <option value="PIX">Pix</option>
-                <option value="DINHEIRO">Dinheiro</option>
-                <option value="DEBITO">Cartão de débito</option>
-                <option value="CREDITO">Cartão de crédito</option>
-              </select>
+              <div>
+                <label className="mb-1 block text-xs font-black uppercase tracking-wide text-zinc-400">
+                  Forma de pagamento
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) =>
+                    setPaymentMethod(
+                      e.target.value as "PIX" | "DINHEIRO" | "DEBITO" | "CREDITO"
+                    )
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-bold text-zinc-950 outline-none transition focus:border-red-400 focus:ring-4 focus:ring-red-950/30"
+                >
+                  <option value="PIX">Pix</option>
+                  <option value="DINHEIRO">Dinheiro</option>
+                  <option value="DEBITO">Cartão de débito</option>
+                  <option value="CREDITO">Cartão de crédito</option>
+                </select>
+              </div>
 
-              <input
-                type="number"
-                placeholder="Taxa de entrega"
-                value={deliveryFee}
-                onChange={(e) => setDeliveryFee(e.target.value)}
-                className="rounded-xl border px-4 py-3 outline-none"
-              />
+              <div>
+                <label className="mb-1 block text-xs font-black uppercase tracking-wide text-zinc-400">
+                  Taxa de entrega
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ex: 6,00"
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-red-400 focus:bg-white/15"
+                />
+              </div>
 
-              <input
-                type="number"
-                placeholder="Desconto"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-                className="rounded-xl border px-4 py-3 outline-none"
-              />
+              <div>
+                <label className="mb-1 block text-xs font-black uppercase tracking-wide text-zinc-400">
+                  Desconto
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ex: 5,00"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-red-400 focus:bg-white/15"
+                />
+              </div>
 
-              <input
-                type="number"
-                placeholder="Troco para"
-                value={changeFor}
-                onChange={(e) => setChangeFor(e.target.value)}
-                className="rounded-xl border px-4 py-3 outline-none"
-              />
+              <div>
+                <label className="mb-1 block text-xs font-black uppercase tracking-wide text-zinc-400">
+                  Troco para
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ex: 100,00"
+                  value={changeFor}
+                  onChange={(e) => setChangeFor(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-red-400 focus:bg-white/15"
+                />
+              </div>
 
               <textarea
                 placeholder="Observação geral do pedido"
                 value={observation}
                 onChange={(e) => setObservation(e.target.value)}
-                className="min-h-[100px] rounded-xl border px-4 py-3 outline-none"
+                className="min-h-[100px] rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-400 focus:border-red-400 focus:bg-white/15"
               />
             </div>
 
             <div className="mt-4 space-y-3">
               {cart.length === 0 ? (
-                <div className="rounded-xl border p-4 text-sm text-gray-500">
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-400">
                   Nenhum item no pedido.
                 </div>
               ) : (
                 cart.map((item) => (
-                  <div key={item.id} className="rounded-xl border p-3">
+                  <div key={item.id} className="rounded-3xl border border-white/10 bg-white/5 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
-                        <div className="font-semibold">{item.name}</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="font-black">{item.name}</div>
+                        <div className="text-sm text-zinc-500">
                           {toBRL(item.unitPrice)} cada
                         </div>
 
                         {item.flavorNames && item.flavorNames.length > 0 && (
-                          <div className="mt-1 text-xs text-gray-500">
+                          <div className="mt-1 text-xs font-semibold text-zinc-500">
                             Sabores: {item.flavorNames.join(" + ")}
                           </div>
                         )}
 
                         {item.additionalNames && item.additionalNames.length > 0 && (
-                          <div className="mt-1 text-xs text-gray-500">
+                          <div className="mt-1 text-xs font-semibold text-zinc-500">
                             Adicionais: {item.additionalNames.join(", ")}
                           </div>
                         )}
@@ -1187,7 +1275,7 @@ const data = await res.json().catch(() => null);
                           placeholder="Observação do item"
                           value={item.notes || ""}
                           onChange={(e) => updateItemNotes(item.id, e.target.value)}
-                          className="mt-2 min-h-[70px] w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                          className="mt-2 min-h-[70px] w-full rounded-2xl border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-red-400"
                         />
                       </div>
 
@@ -1195,17 +1283,17 @@ const data = await res.json().catch(() => null);
                         <button
                           type="button"
                           onClick={() => decrementItem(item.id)}
-                          className="h-8 w-8 rounded-lg border"
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/10 font-black text-white transition hover:bg-white/20"
                         >
                           -
                         </button>
-                        <span className="min-w-[24px] text-center font-bold">
+                        <span className="min-w-[24px] text-center font-black">
                           {item.quantity}
                         </span>
                         <button
                           type="button"
                           onClick={() => incrementItem(item.id)}
-                          className="h-8 w-8 rounded-lg border"
+                          className="h-9 w-9 rounded-xl border border-white/10 bg-white/10 font-black text-white transition hover:bg-white/20"
                         >
                           +
                         </button>
@@ -1216,22 +1304,22 @@ const data = await res.json().catch(() => null);
               )}
             </div>
 
-            <div className="mt-4 space-y-2 border-t pt-4">
-              <div className="flex justify-between text-sm">
+            <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+              <div className="flex justify-between text-sm text-zinc-300">
                 <span>Subtotal</span>
                 <span>{toBRL(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-sm text-zinc-300">
                 <span>Taxa</span>
                 <span>{toBRL(Number(deliveryFee || 0))}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-sm text-zinc-300">
                 <span>Desconto</span>
                 <span>{toBRL(Number(discount || 0))}</span>
               </div>
-              <div className="flex justify-between text-lg font-bold">
+              <div className="flex justify-between text-xl font-black">
                 <span>Total</span>
-                <span className="text-red-600">{toBRL(total)}</span>
+                <span className="text-red-500">{toBRL(total)}</span>
               </div>
             </div>
 
@@ -1239,29 +1327,30 @@ const data = await res.json().catch(() => null);
               type="button"
               onClick={finalizeOrder}
               disabled={savingOrder}
-              className="mt-4 w-full rounded-xl bg-red-600 px-4 py-3 font-bold text-white disabled:opacity-50"
+              className="mt-5 w-full rounded-2xl bg-red-600 px-5 py-5 text-lg font-black text-white shadow-xl shadow-red-950/30 transition hover:bg-red-700 disabled:opacity-50"
             >
               {savingOrder ? "Salvando..." : "Finalizar pedido"}
             </button>
           </div>
         </aside>
+        </div>
       </div>
 
       {selectedTarget && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-3 md:items-center md:p-4">
-          <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-red-200 bg-white shadow-2xl">
-            <div className="overflow-y-auto overscroll-contain p-5 md:p-6">
-              <h2 className="text-2xl font-bold text-black">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm md:items-center md:p-4">
+          <div className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-2xl">
+            <div className="overflow-y-auto overscroll-contain p-5 md:p-7">
+              <h2 className="text-3xl font-black text-zinc-950">
                 {selectedTarget.type === "PRODUCT"
                   ? selectedTarget.product.name
                   : selectedTarget.name}
               </h2>
 
-              <p className="mt-1 text-sm text-gray-600">
+              <p className="mt-1 text-sm text-zinc-600">
                 Escolha os adicionais do item
               </p>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-5 space-y-3">
                 {currentAdditionals.length > 0 ? (
                   currentAdditionals.map((additional) => {
                     const checked = isAdditionalSelected(additional.id);
@@ -1269,21 +1358,21 @@ const data = await res.json().catch(() => null);
                     return (
                       <label
                         key={additional.id}
-                        className="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-red-200 bg-white p-3"
+                        className="flex cursor-pointer items-start justify-between gap-3 rounded-3xl border border-zinc-200 bg-zinc-50 p-4 transition hover:border-red-200 hover:bg-white"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-black">
+                          <p className="font-black text-zinc-950">
                             {additional.name}
                             {additional.required ? " *" : ""}
                           </p>
 
                           {additional.description && (
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-zinc-500">
                               {additional.description}
                             </p>
                           )}
 
-                          <p className="text-sm text-red-600">
+                          <p className="text-sm font-black text-red-600">
                             + {toBRL(Number(additional.price))}
                           </p>
                         </div>
@@ -1298,35 +1387,35 @@ const data = await res.json().catch(() => null);
                     );
                   })
                 ) : (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-zinc-500">
                     Este item não possui adicionais.
                   </p>
                 )}
               </div>
 
-              <div className="mt-6 space-y-2 border-t border-red-200 pt-4">
-                <div className="flex items-center justify-between text-sm text-gray-600">
+              <div className="mt-6 space-y-2 border-t border-zinc-200 pt-4">
+                <div className="flex items-center justify-between text-sm text-zinc-600">
                   <span>Base</span>
                   <span>{toBRL(currentBasePrice)}</span>
                 </div>
 
-                <div className="flex items-center justify-between text-sm text-gray-600">
+                <div className="flex items-center justify-between text-sm text-zinc-600">
                   <span>Adicionais</span>
                   <span>{toBRL(additionalTotal)}</span>
                 </div>
 
-                <div className="flex items-center justify-between text-lg font-bold text-black">
+                <div className="flex items-center justify-between text-lg font-black text-zinc-950">
                   <span>Total</span>
-                  <span className="text-red-600">{toBRL(finalModalPrice)}</span>
+                  <span className="text-red-500">{toBRL(finalModalPrice)}</span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 border-t border-red-200 bg-white p-4">
+            <div className="grid grid-cols-2 gap-3 border-t border-zinc-200 bg-white p-4">
               <button
                 type="button"
                 onClick={closeOptionsModal}
-                className="rounded-xl border border-red-300 bg-white px-4 py-3 font-semibold text-red-600"
+                className="rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-black text-red-600 transition hover:bg-red-50"
               >
                 Cancelar
               </button>
@@ -1334,7 +1423,7 @@ const data = await res.json().catch(() => null);
               <button
                 type="button"
                 onClick={confirmSelectedTarget}
-                className="rounded-xl border border-red-600 bg-red-600 px-4 py-3 font-semibold text-white"
+                className="rounded-2xl border border-red-600 bg-red-600 px-4 py-3 text-sm font-black text-white shadow-lg transition hover:bg-red-700"
               >
                 Adicionar ao pedido
               </button>

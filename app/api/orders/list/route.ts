@@ -1,67 +1,88 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCompanyId } from "@/lib/server-company";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const orders = await prisma.order.findMany({
-  orderBy: {
-    createdAt: "desc",
-  },
-  include: {
-    customer: true,
-    items: true,
-    driver: true,
-    deliveryBatch: true,
-  },
-});
+      where: {
+        company_id: companyId,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        customer: true,
+        items: true,
+        driver: true,
+        deliveryBatch: true,
+      },
+    });
 
-    const normalizedOrders = orders.map((order) => ({
-      id: order.id,
-      code: order.code || `PED-${String(order.id).slice(0, 8)}`,
-      total: Number(order.total || 0),
-      paymentMethod: order.paymentMethod || "PIX",
-      observation: order.observation || null,
-      status: order.status,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-      archived: Boolean(order.archived),
-      archivedAt: order.archivedAt || null,
-      changeFor: order.changeFor || null,
-driverId: order.driverId || null,
-driverName: order.driver?.name || null,
-deliveryBatchId: order.deliveryBatchId || null,
-deliveryBatchCode: order.deliveryBatch?.code || null,
-deliveryRouteOrder: order.deliveryRouteOrder || null,
-dispatchedAt: order.dispatchedAt || null,
+    const normalizedOrders = orders.map((order) => {
+      const isPDV = String(order.code || "").startsWith("PDV-");
 
-      channel: order.channel || "ONLINE",
-      orderType: order.orderType || "DELIVERY",
+      return {
+        id: order.id,
+        code: order.code || `PED-${String(order.id).slice(0, 8)}`,
+        total: Number(order.total || 0),
+        paymentMethod: order.paymentMethod || "PIX",
+        status: order.status,
+        createdAt: order.createdAt,
+        updatedAt: order.createdAt,
 
-      customer: order.customer
-        ? {
-            id: order.customer.id,
-            name: String(order.customer.name || "").trim(),
-            whatsapp: String(order.customer.whatsapp || "").trim(),
-            email: order.customer.email || null,
-            cpf: order.customer.cpf || null,
-            address: String(order.customer.address || "").trim(),
-            number: String(order.customer.number || "").trim(),
-            complement: String(order.customer.complement || "").trim(),
-            neighborhood: String(order.customer.neighborhood || "").trim(),
-            city: String(order.customer.city || "").trim(),
-            cep: String(order.customer.cep || "").trim(),
-          }
-        : null,
+        driverId: order.driverId || null,
+        driverName: order.driver?.name || null,
 
-      items: Array.isArray(order.items)
-        ? order.items.map((item) => ({
-            id: item.id,
-            name: String(item.name || "Produto").trim(),
-            price: Number(item.price || 0),
-            quantity: Number(item.quantity || 1),
-          }))
-        : [],
-    }));
+        deliveryBatchId: order.deliveryBatchId || null,
+        deliveryBatchCode: order.deliveryBatch?.code || null,
+
+        archived: false,
+        archivedAt: null,
+        observation: null,
+        changeFor: null,
+
+        channel: isPDV ? "LOJA" : "ONLINE",
+        orderType: isPDV ? "LOCAL" : "DELIVERY",
+
+        deliveryRouteOrder: null,
+        dispatchedAt: null,
+
+        customer: order.customer
+          ? {
+              id: order.customer.id,
+              name: String(order.customer.name || "").trim(),
+              whatsapp: String(order.customer.whatsapp || "").trim(),
+              email: order.customer.email || null,
+              cpf: order.customer.cpf || null,
+              address: String(order.customer.address || "").trim(),
+              number: "",
+              complement: "",
+              neighborhood: "",
+              city: "",
+              cep: String(order.customer.cep || "").trim(),
+            }
+          : null,
+
+        items: Array.isArray(order.items)
+          ? order.items.map((item) => ({
+              id: item.id,
+              name: String(item.name || "Produto").trim(),
+              price: Number(item.price || 0),
+              quantity: Number(item.quantity || 1),
+            }))
+          : [],
+      };
+    });
 
     return NextResponse.json(normalizedOrders, { status: 200 });
   } catch (error) {
