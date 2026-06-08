@@ -173,7 +173,9 @@ for (const template of defaultTemplates) {
     .select()
     .single();
 
-  if (templateError) throw new Error(templateError.message);
+  if (templateError) {
+  throw new Error(templateError.message || "Erro ao criar mensagens padrão");
+}
 
   await supabaseAdmin.from("message_variations").insert({
     company_id: company.id,
