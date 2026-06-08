@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
-    const leadId = String(body?.lead_id || "");
-    const intent = String(body?.intent || "OPENING");
+    const leadId = String(body?.lead_id || "").trim();
+    const intent = String(body?.intent || "OPENING").trim();
     const sessionId = Number(body?.session_id || 1);
 
     if (!leadId) {
@@ -60,10 +60,10 @@ export async function POST(req: NextRequest) {
     const item = await prisma.automation_queue.create({
       data: {
         company_id: companyId,
-        branch_id: branchId,
+        branch_id: branchId || null,
         lead_id: lead.id,
         phone: lead.phone,
-        session_id: sessionId,
+        session_id: Number.isNaN(sessionId) ? 1 : sessionId,
         type: "campaign",
         status: "pending",
         scheduled_at: new Date(),
@@ -103,21 +103,22 @@ export async function PATCH(req: NextRequest) {
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
-    const action = String(body?.action || "");
+    const action = String(body?.action || "").trim();
 
     if (!["pause", "resume"].includes(action)) {
       return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     }
 
-    const newStatus = action === "pause" ? "paused" : "pending";
+    const currentStatus = action === "pause" ? "pending" : "paused";
+    const nextStatus = action === "pause" ? "paused" : "pending";
 
     const result = await prisma.automation_queue.updateMany({
       where: {
         company_id: companyId,
-        status: action === "pause" ? "pending" : "paused",
+        status: currentStatus,
       },
       data: {
-        status: newStatus,
+        status: nextStatus,
       },
     });
 
