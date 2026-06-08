@@ -1,16 +1,27 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/crm/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 function cleanPhone(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
 function parseCSV(text: string) {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const headers = lines[0].split(",").map((header) => header.trim().toLowerCase());
 
   return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim());
+    const values = line.split(",").map((value) => value.trim());
     const row: any = {};
 
     headers.forEach((header, index) => {
@@ -25,7 +36,7 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData();
 
-    const file = formData.get("file") as File;
+    const file = formData.get("file") as File | null;
     const whatsappAccountId = String(formData.get("whatsappAccountId") || "1");
 
     if (!file) {
@@ -50,7 +61,7 @@ export async function POST(req: Request) {
         import_batch_id: importBatchId,
         criado_em: new Date().toISOString(),
       }))
-      .filter((c) => c.telefone);
+      .filter((contact) => contact.telefone);
 
     if (contacts.length === 0) {
       return NextResponse.json(
