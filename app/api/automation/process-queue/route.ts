@@ -33,10 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!ALLOWED_INTENTS.includes(intent)) {
-      return NextResponse.json(
-        { error: "Intent inválida" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Intent inválida" }, { status: 400 });
     }
 
     const lead = await prisma.leads.findFirst({
@@ -70,7 +67,6 @@ export async function POST(req: NextRequest) {
         session_id: sessionId,
 
         type: "campaign",
-        intent,
         status: "pending",
         paused: false,
         scheduled_at: new Date(),
@@ -86,6 +82,7 @@ export async function POST(req: NextRequest) {
       },
       data: {
         status: intent === "OPENING" ? "enviado" : "campanha",
+        conversation_stage: intent,
         updated_at: new Date(),
       },
     });
@@ -112,10 +109,7 @@ export async function PATCH(req: NextRequest) {
     const action = String(body?.action || "");
 
     if (!["pause", "resume"].includes(action)) {
-      return NextResponse.json(
-        { error: "Ação inválida" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     }
 
     const paused = action === "pause";
