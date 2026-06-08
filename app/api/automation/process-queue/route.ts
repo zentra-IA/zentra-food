@@ -61,14 +61,11 @@ export async function POST(req: NextRequest) {
       data: {
         company_id: companyId,
         branch_id: branchId,
-
         lead_id: lead.id,
         phone: lead.phone,
         session_id: sessionId,
-
         type: "campaign",
         status: "pending",
-        paused: false,
         scheduled_at: new Date(),
         created_at: new Date(),
         attempts: 0,
@@ -112,15 +109,15 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     }
 
-    const paused = action === "pause";
+    const newStatus = action === "pause" ? "paused" : "pending";
 
     const result = await prisma.automation_queue.updateMany({
       where: {
         company_id: companyId,
-        status: "pending",
+        status: action === "pause" ? "pending" : "paused",
       },
       data: {
-        paused,
+        status: newStatus,
       },
     });
 
