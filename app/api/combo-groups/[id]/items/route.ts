@@ -27,13 +27,16 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     });
 
     if (!group) {
-      return NextResponse.json({ error: "Grupo não encontrado" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Grupo não encontrado" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json(normalizeItems(group.items));
   } catch (error: any) {
     return NextResponse.json(
-      { error: "Erro ao buscar itens", details: error.message },
+      { error: "Erro ao buscar itens", details: error?.message || String(error) },
       { status: 500 }
     );
   }
@@ -49,18 +52,21 @@ export async function POST(req: NextRequest, context: RouteContext) {
     });
 
     if (!group) {
-      return NextResponse.json({ error: "Grupo não encontrado" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Grupo não encontrado" },
+        { status: 404 }
+      );
     }
 
     const items = Array.isArray(body?.items) ? body.items : [];
 
-    const productIds = [
-      ...new Set(
+    const productIds: string[] = Array.from(
+      new Set(
         items
           .map((item: any) => String(item?.productId || "").trim())
-          .filter(Boolean)
-      ),
-    ];
+          .filter((productId: string) => productId.length > 0)
+      )
+    );
 
     if (!productIds.length) {
       await prisma.comboGroupItem.deleteMany({
@@ -73,13 +79,14 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const products = await prisma.product.findMany({
       where: {
         id: { in: productIds },
+        company_id: group.company_id,
       },
       select: {
         id: true,
       },
     });
 
-    const validProductIds = products.map((product) => product.id);
+    const validProductIds: string[] = products.map((product) => product.id);
 
     if (!validProductIds.length) {
       return NextResponse.json(
@@ -117,7 +124,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     return NextResponse.json(updated ? normalizeItems(updated.items) : []);
   } catch (error: any) {
     return NextResponse.json(
-      { error: "Erro ao salvar itens", details: error.message },
+      { error: "Erro ao salvar itens", details: error?.message || String(error) },
       { status: 500 }
     );
   }
