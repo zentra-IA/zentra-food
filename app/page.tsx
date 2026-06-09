@@ -187,27 +187,33 @@ export default function HomePage() {
     return localStorage.getItem("active_company_id") || "";
   }
 
-  function buildHeaders() {
-    const companyId = getCompanyId();
+  function buildHeaders(): HeadersInit {
+  const headers: Record<string, string> = {};
 
-    if (!companyId) return {};
-
-    return {
-      "x-company-id": companyId,
-    };
+  if (typeof window === "undefined") {
+    return headers;
   }
+
+  const companyId = localStorage.getItem("active_company_id");
+
+  if (companyId && companyId.trim()) {
+    headers["x-company-id"] = companyId;
+  }
+
+  return headers;
+}
 
   async function loadData() {
     try {
       const [menuRes, combosRes, logoRes] = await Promise.all([
         fetch(`/api/menu?t=${Date.now()}`, {
           cache: "no-store",
-          headers: buildHeaders(),
+          headers: buildHeaders() as HeadersInit,
         }),
 
         fetch(`/api/combos?t=${Date.now()}`, {
           cache: "no-store",
-          headers: buildHeaders(),
+          headers: buildHeaders() as HeadersInit,
         }),
 
         fetch(`/api/company/logo?t=${Date.now()}`, {
