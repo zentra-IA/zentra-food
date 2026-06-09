@@ -1,9 +1,21 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+export const dynamic = "force-dynamic";
+
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_SUPPORT_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "OpenAI não configurada. Verifique OPENAI_API_KEY ou OPENAI_SUPPORT_KEY."
+    );
+  }
+
+  return new OpenAI({
+    apiKey,
+  });
+}
 
 const allowedClassifications = [
   "resposta_neutra",
@@ -23,6 +35,7 @@ const allowedClassifications = [
 
 export async function POST(req: Request) {
   try {
+    const openai = getOpenAI();
     const { message } = await req.json();
 
     if (!message || !String(message).trim()) {
@@ -102,11 +115,13 @@ Responda APENAS com o nome da categoria.
       : "resposta_confusa";
 
     return NextResponse.json({ classification });
-  } catch (error) {
-    console.error(error);
+  } catch (error: any) {
+    console.error("ERRO AI CLASSIFY:", error);
 
     return NextResponse.json(
-      { error: "Erro ao classificar mensagem" },
+      {
+        error: error?.message || "Erro ao classificar mensagem",
+      },
       { status: 500 }
     );
   }
