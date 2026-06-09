@@ -26,12 +26,15 @@ export async function POST(req: NextRequest) {
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
-    const leadId = String(body?.lead_id || "");
-    const intent = String(body?.intent || "OPENING");
+    const leadId = String(body?.lead_id || "").trim();
+    const intent = String(body?.intent || "OPENING").trim();
     const sessionId = Number(body?.session_id || 1);
 
     if (!leadId) {
-      return NextResponse.json({ error: "lead_id é obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "lead_id é obrigatório" },
+        { status: 400 }
+      );
     }
 
     if (!ALLOWED_INTENTS.includes(intent)) {
@@ -65,11 +68,9 @@ export async function POST(req: NextRequest) {
         branch_id: branchId || null,
         lead_id: lead.id,
         phone: lead.phone,
-        session_id: sessionId,
+        session_id: Number.isNaN(sessionId) ? 1 : sessionId,
         type: "campaign",
-        intent,
         status: "pending",
-        paused: false,
         scheduled_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
         attempts: 0,
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest) {
       .from("leads")
       .update({
         status: intent === "OPENING" ? "enviado" : "campanha",
+        conversation_stage: intent,
         updated_at: new Date().toISOString(),
       })
       .eq("id", lead.id)
@@ -107,19 +109,20 @@ export async function PATCH(req: NextRequest) {
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
-    const action = String(body?.action || "");
+    const action = String(body?.action || "").trim();
 
     if (!["pause", "resume"].includes(action)) {
       return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     }
 
-    const paused = action === "pause";
+    const currentStatus = action === "pause" ? "pending" : "paused";
+    const nextStatus = action === "pause" ? "paused" : "pending";
 
     const { data, error } = await supabase
       .from("automation_queue")
-      .update({ paused })
+      .update({ status: nextStatus })
       .eq("company_id", companyId)
-      .eq("status", "pending")
+      .eq("status", currentStatus)
       .select("id");
 
     if (error) throw new Error(error.message);
