@@ -32,6 +32,7 @@ const orderSchema = z.object({
 
 function generateOrderCode() {
   const now = new Date();
+
   const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
     2,
     "0"
@@ -72,8 +73,17 @@ export async function POST(req: NextRequest) {
     }
 
     const { customer, observacao, totalAmount, items } = parsed.data;
-
     const paymentMethod = normalizePaymentMethod(parsed.data.paymentMethod);
+
+    const fullAddress = [
+      customer.address,
+      customer.number ? `Nº ${customer.number}` : null,
+      customer.complement,
+      customer.neighborhood,
+      customer.city,
+    ]
+      .filter(Boolean)
+      .join(", ");
 
     const createdCustomer = await db.customer.create({
       data: {
@@ -81,9 +91,7 @@ export async function POST(req: NextRequest) {
         whatsapp: customer.whatsapp,
         email: customer.email || null,
         cep: customer.cep || null,
-        address: customer.address,
-        number: customer.number,
-        complement: customer.complement || null,
+        address: fullAddress || null,
         neighborhood: customer.neighborhood,
         city: customer.city,
       },
@@ -94,7 +102,6 @@ export async function POST(req: NextRequest) {
         code: generateOrderCode(),
         customerId: createdCustomer.id,
         paymentMethod,
-        observation: observacao || null,
         status: "NOVO" as OrderStatus,
         archived: false,
         total: totalAmount,
@@ -114,11 +121,14 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(order, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao criar pedido:", error);
 
     return NextResponse.json(
-      { error: "Erro interno ao criar pedido" },
+      {
+        error: "Erro interno ao criar pedido",
+        details: error?.message || String(error),
+      },
       { status: 500 }
     );
   }
