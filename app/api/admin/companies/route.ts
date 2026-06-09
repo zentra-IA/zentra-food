@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function GET() {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { data, error } = await supabaseAdmin
       .from("companies")
       .select(`
@@ -34,7 +46,7 @@ export async function GET() {
     return NextResponse.json(data || []);
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao buscar empresas" },
+      { error: error?.message || "Erro ao buscar empresas" },
       { status: 500 }
     );
   }
@@ -42,7 +54,9 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const body = await req.json();
+
     const id = String(body.id || "").trim();
 
     if (!id) {
@@ -90,7 +104,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true, company: data });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao atualizar empresa" },
+      { error: error?.message || "Erro ao atualizar empresa" },
       { status: 500 }
     );
   }
@@ -98,6 +112,8 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -114,7 +130,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao excluir empresa" },
+      { error: error?.message || "Erro ao excluir empresa" },
       { status: 500 }
     );
   }
