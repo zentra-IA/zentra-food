@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getCompanyId, getBranchId } from "@/lib/server-company";
 import { PaymentMethod, OrderStatus } from "@prisma/client";
 import { z } from "zod";
 
@@ -31,18 +32,7 @@ const orderSchema = z.object({
 });
 
 function generateOrderCode() {
-  const now = new Date();
-
-  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}${String(now.getDate()).padStart(2, "0")}${String(
-    now.getHours()
-  ).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(
-    now.getSeconds()
-  ).padStart(2, "0")}`;
-
-  return `KMCL-${stamp}`;
+  return `KMCL-${Date.now()}`;
 }
 
 function normalizePaymentMethod(value: string): PaymentMethod {
@@ -62,6 +52,16 @@ function normalizePaymentMethod(value: string): PaymentMethod {
 
 export async function POST(req: NextRequest) {
   try {
+    const companyId = getCompanyId(req);
+    const branchId = getBranchId(req);
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Empresa não identificada" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const parsed = orderSchema.safeParse(body);
 
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { customer, observacao, totalAmount, items } = parsed.data;
+    const { customer, totalAmount, items } = parsed.data;
     const paymentMethod = normalizePaymentMethod(parsed.data.paymentMethod);
 
     const fullAddress = [
@@ -87,6 +87,8 @@ export async function POST(req: NextRequest) {
 
     const createdCustomer = await db.customer.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId || null,
         name: customer.name,
         whatsapp: customer.whatsapp,
         email: customer.email || null,
@@ -99,6 +101,8 @@ export async function POST(req: NextRequest) {
 
     const order = await db.order.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId || null,
         code: generateOrderCode(),
         customerId: createdCustomer.id,
         paymentMethod,
@@ -107,6 +111,8 @@ export async function POST(req: NextRequest) {
         total: totalAmount,
         items: {
           create: items.map((item) => ({
+            company_id: companyId,
+            branch_id: branchId || null,
             productId: item.productId || null,
             name: item.name,
             price: Number(item.price || 0),
