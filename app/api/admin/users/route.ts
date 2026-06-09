@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 const ROLES = [
   "administrador",
@@ -17,6 +27,8 @@ const ROLES = [
 ];
 
 async function getUserLimit(companyId: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+
   const { data: company } = await supabaseAdmin
     .from("companies")
     .select("plan_id")
@@ -38,11 +50,16 @@ async function getUserLimit(companyId: string) {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { searchParams } = new URL(req.url);
     const companyId = searchParams.get("companyId");
 
     if (!companyId) {
-      return NextResponse.json({ error: "companyId obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "companyId obrigatório" },
+        { status: 400 }
+      );
     }
 
     const { data: users, error } = await supabaseAdmin
@@ -78,7 +95,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao buscar usuários" },
+      { error: error?.message || "Erro ao buscar usuários" },
       { status: 500 }
     );
   }
@@ -86,6 +103,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const body = await req.json();
 
     const companyId = String(body.companyId || "").trim();
@@ -162,7 +181,9 @@ export async function POST(req: NextRequest) {
           user_metadata: { name, phone, role },
         });
 
-      if (userError) throw new Error(userError.message);
+      if (userError || !createdUser?.user?.id) {
+        throw new Error(userError?.message || "Erro ao criar usuário");
+      }
 
       userId = createdUser.user.id;
     } else {
@@ -190,7 +211,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, user: link });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao criar usuário" },
+      { error: error?.message || "Erro ao criar usuário" },
       { status: 500 }
     );
   }
@@ -198,10 +219,13 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const body = await req.json();
 
     const id = String(body.id || "").trim();
-    const name = body.name !== undefined ? String(body.name || "").trim() : undefined;
+    const name =
+      body.name !== undefined ? String(body.name || "").trim() : undefined;
     const email =
       body.email !== undefined
         ? String(body.email || "").trim().toLowerCase()
@@ -230,7 +254,10 @@ export async function PATCH(req: NextRequest) {
     if (findError) throw new Error(findError.message);
 
     if (!currentUser) {
-      return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Usuário não encontrado" },
+        { status: 404 }
+      );
     }
 
     const updateData: any = {};
@@ -274,7 +301,7 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao atualizar usuário" },
+      { error: error?.message || "Erro ao atualizar usuário" },
       { status: 500 }
     );
   }
@@ -282,6 +309,8 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -320,7 +349,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao excluir usuário" },
+      { error: error?.message || "Erro ao excluir usuário" },
       { status: 500 }
     );
   }
