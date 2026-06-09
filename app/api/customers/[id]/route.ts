@@ -32,12 +32,21 @@ export async function PUT(req: NextRequest, context: Params) {
     const whatsapp = onlyDigits(body?.whatsapp);
     const email = body?.email ? String(body.email).trim() : null;
     const cep = onlyDigits(body?.cep);
-    const address = body?.address ? String(body.address).trim() : null;
-    const number = body?.number ? String(body.number).trim() : null;
-    const complement = body?.complement ? String(body.complement).trim() : null;
+
+    const addressText = String(body?.address || "").trim();
+    const numberText = body?.number ? `Nº ${String(body.number).trim()}` : "";
+    const complementText = body?.complement
+      ? String(body.complement).trim()
+      : "";
+
+    const address = [addressText, numberText, complementText]
+      .filter(Boolean)
+      .join(", ");
+
     const neighborhood = body?.neighborhood
       ? String(body.neighborhood).trim()
       : null;
+
     const city = body?.city ? String(body.city).trim() : null;
 
     if (!name) {
@@ -53,6 +62,7 @@ export async function PUT(req: NextRequest, context: Params) {
 
     const customerWithSameWhatsapp = await prisma.customer.findFirst({
       where: {
+        company_id: existing.company_id,
         whatsapp,
         NOT: { id },
       },
@@ -68,6 +78,7 @@ export async function PUT(req: NextRequest, context: Params) {
     if (cpf) {
       const existingCpf = await prisma.customer.findFirst({
         where: {
+          company_id: existing.company_id,
           cpf,
           NOT: { id },
         },
@@ -89,19 +100,21 @@ export async function PUT(req: NextRequest, context: Params) {
         whatsapp,
         email,
         cep: cep || null,
-        address,
-        number,
-        complement,
+        address: address || null,
         neighborhood,
         city,
       },
     });
 
     return NextResponse.json(customer, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("ERRO AO ATUALIZAR CLIENTE:", error);
+
     return NextResponse.json(
-      { error: "Erro ao atualizar cliente" },
+      {
+        error: "Erro ao atualizar cliente",
+        details: error?.message || String(error),
+      },
       { status: 500 }
     );
   }
