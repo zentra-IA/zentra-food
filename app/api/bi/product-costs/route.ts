@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const { data, error } = await supabase
@@ -20,13 +29,17 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ success: true, products: data || [] });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Erro ao buscar custos" },
+      { status: 500 }
+    );
   }
 }
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
@@ -41,7 +54,10 @@ export async function PATCH(req: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Erro ao atualizar custo" },
+      { status: 500 }
+    );
   }
 }

@@ -1,48 +1,64 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const { data } = await supabase
-    .from("OrderItem")
-    .select("*");
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const products: Record<
-    string,
-    {
-      name: string;
-      quantity: number;
-      revenue: number;
-    }
-  > = {};
-
-  for (const item of data || []) {
-    if (!products[item.name]) {
-      products[item.name] = {
-        name: item.name,
-        quantity: 0,
-        revenue: 0,
-      };
-    }
-
-    products[item.name].quantity +=
-      Number(item.quantity || 0);
-
-    products[item.name].revenue +=
-      Number(item.price || 0) *
-      Number(item.quantity || 0);
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
   }
 
-  const ranking = Object.values(products)
-    .sort(
-      (a, b) =>
-        b.quantity - a.quantity
-    )
-    .slice(0, 10);
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
-  return NextResponse.json(ranking);
+export async function GET(req: NextRequest) {
+  try {
+    const supabase = getSupabase();
+    const { companyId } = requireCompany(req);
+
+    const { data, error } = await supabase
+      .from("OrderItem")
+      .select("*")
+      .eq("company_id", companyId);
+
+    if (error) throw error;
+
+    const products: Record<
+      string,
+      {
+        name: string;
+        quantity: number;
+        revenue: number;
+      }
+    > = {};
+
+    for (const item of data || []) {
+      if (!products[item.name]) {
+        products[item.name] = {
+          name: item.name,
+          quantity: 0,
+          revenue: 0,
+        };
+      }
+
+      products[item.name].quantity += Number(item.quantity || 0);
+      products[item.name].revenue +=
+        Number(item.price || 0) * Number(item.quantity || 0);
+    }
+
+    const ranking = Object.values(products)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 10);
+
+    return NextResponse.json(ranking);
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || "Erro ao buscar produtos mais vendidos" },
+      { status: 500 }
+    );
+  }
 }
