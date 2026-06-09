@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function slugify(value: string) {
   return String(value || "")
@@ -17,21 +27,32 @@ function slugify(value: string) {
 }
 
 export async function GET() {
-  const { data, error } = await supabaseAdmin
-    .from("plans")
-    .select("id,name")
-    .eq("active", true)
-    .order("name");
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const { data, error } = await supabaseAdmin
+      .from("plans")
+      .select("id,name")
+      .eq("active", true)
+      .order("name");
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(data || []);
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || "Erro ao buscar planos" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(data || []);
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const body = await req.json();
 
     const restaurantName = String(body.restaurantName || "").trim();
@@ -64,8 +85,8 @@ export async function POST(req: NextRequest) {
         },
       });
 
-    if (userError) {
-      throw new Error(userError.message || "Erro ao criar usuário");
+    if (userError || !userData?.user?.id) {
+      throw new Error(userError?.message || "Erro ao criar usuário");
     }
 
     const userId = userData.user.id;
@@ -218,7 +239,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       {
-        error: error.message || "Erro ao criar empresa",
+        error: error?.message || "Erro ao criar empresa",
       },
       { status: 500 }
     );
