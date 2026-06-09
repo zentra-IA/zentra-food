@@ -1,5 +1,23 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+const WHATSAPP_SERVER =
+  process.env.NEXT_PUBLIC_WHATSAPP_SERVER || "http://localhost:3011";
 
 function cleanPhone(value: string) {
   return String(value || "").replace(/\D/g, "");
@@ -34,7 +52,7 @@ async function sendWhatsApp({
   number: string;
   message: string;
 }) {
-  const res = await fetch("http://localhost:3001/send", {
+  const res = await fetch(`${WHATSAPP_SERVER}/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -47,14 +65,14 @@ async function sendWhatsApp({
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.error || "Erro ao enviar WhatsApp");
+    throw new Error(data?.error || "Erro ao enviar WhatsApp");
   }
 
   return data;
 }
 
 function buildOpeningMessage(contact: any) {
-  const firstName = getFirstName(contact.nome || contact.name);
+  const firstName = getFirstName(contact.nome || contact.name || "tudo bem");
 
   const openings = [
     `oi ${firstName} tudo bem?`,
@@ -70,13 +88,6 @@ function buildOpeningMessage(contact: any) {
     `bom dia ${firstName} tudo bem?`,
     `boa tarde ${firstName} tudo certo?`,
     `boa noite ${firstName} tudo bem?`,
-    `${firstName} tudo bem?`,
-    `${firstName} tudo certo?`,
-    `${firstName} como você está?`,
-    `oi ${firstName} como estão as coisas?`,
-    `fala ${firstName} como vai?`,
-    `oie ${firstName} tudo bem por aí?`,
-    `olá ${firstName} como você tá?`,
   ];
 
   return openings[Math.floor(Math.random() * openings.length)];
@@ -84,7 +95,7 @@ function buildOpeningMessage(contact: any) {
 
 export async function POST() {
   try {
-    console.log("🚀 INICIANDO CAMPANHA DE ABERTURA");
+    const supabase = getSupabase();
 
     const { data: contacts, error } = await supabase
       .from("contacts")
@@ -95,9 +106,7 @@ export async function POST() {
 
     if (error) throw new Error(error.message);
 
-    console.log("CONTATOS ENCONTRADOS:", contacts?.length || 0);
-
-    const results = [];
+    const results: any[] = [];
 
     for (const contact of contacts || []) {
       try {
@@ -127,15 +136,8 @@ export async function POST() {
           continue;
         }
 
-        const sessionId = Number(contact.session_id || 6);
+        const sessionId = Number(contact.session_id || 1);
         const message = buildOpeningMessage(contact);
-
-        console.log("ENVIANDO ABERTURA:", {
-          sessionId,
-          nome: contact.nome || contact.name,
-          telefone: rawPhone,
-          message,
-        });
 
         await sleep(randomDelay(5000, 12000));
 
@@ -167,19 +169,14 @@ export async function POST() {
           status: "sent",
         });
 
-        const delay = randomDelay(35000, 90000);
-        console.log(`⏳ Aguardando ${delay}ms antes do próximo envio`);
-
-        await sleep(delay);
+        await sleep(randomDelay(35000, 90000));
       } catch (error: any) {
-        console.error("❌ ERRO AO ENVIAR:", error.message);
-
         results.push({
           contact_id: contact.id,
           nome: contact.nome || contact.name,
           telefone: contact.telefone || contact.phone,
           status: "error",
-          error: error.message,
+          error: error?.message || "Erro ao enviar",
         });
       }
     }
@@ -195,7 +192,7 @@ export async function POST() {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Erro ao iniciar campanha",
+        error: error?.message || "Erro ao iniciar campanha",
       },
       { status: 500 }
     );
