@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
+
     const body = await req.json();
 
     const email = String(body?.email || "").trim().toLowerCase();
@@ -123,7 +135,9 @@ export async function POST(req: NextRequest) {
     console.error("ERRO LOGIN:", error);
 
     return NextResponse.json(
-      { error: "Erro ao fazer login" },
+      {
+        error: error?.message || "Erro ao fazer login",
+      },
       { status: 500 }
     );
   }
