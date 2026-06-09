@@ -38,14 +38,20 @@ const menuItems: { href: string; label: string; emoji: string; feature: FeatureK
 
 const whatsappSessions = [1, 2, 3, 4, 5];
 
-function buildHeaders() {
-  if (typeof window === "undefined") return {};
+function buildHeaders(): HeadersInit {
+  const headers: Record<string, string> = {};
+
+  if (typeof window === "undefined") {
+    return headers;
+  }
 
   const companyId = localStorage.getItem("active_company_id");
 
-  if (!companyId) return {};
+  if (companyId && companyId.trim()) {
+    headers["x-company-id"] = companyId;
+  }
 
-  return { "x-company-id": companyId };
+  return headers;
 }
 
 function hasFeature(companyData: any, feature: FeatureKey) {
@@ -76,7 +82,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     try {
       const res = await fetch("/api/company/current", {
         cache: "no-store",
-        headers: buildHeaders(),
+        headers: buildHeaders() as HeadersInit,
       });
 
       const data = await res.json();
