@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase não configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function getCurrentMonth() {
   return new Date().toISOString().slice(0, 7);
@@ -12,6 +22,8 @@ function getCurrentMonth() {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { searchParams } = new URL(req.url);
     const companyId = searchParams.get("companyId");
 
@@ -36,7 +48,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao buscar créditos do Radar" },
+      { error: error?.message || "Erro ao buscar créditos do Radar" },
       { status: 500 }
     );
   }
@@ -44,6 +56,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const body = await req.json();
 
     const companyId = String(body.companyId || "").trim();
@@ -52,11 +66,17 @@ export async function POST(req: NextRequest) {
     const notes = String(body.notes || "").trim() || null;
 
     if (!companyId) {
-      return NextResponse.json({ error: "Empresa obrigatória" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Empresa obrigatória" },
+        { status: 400 }
+      );
     }
 
     if (contactsExtra <= 0) {
-      return NextResponse.json({ error: "Quantidade inválida" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Quantidade inválida" },
+        { status: 400 }
+      );
     }
 
     let expiresAt: string | null = null;
@@ -91,7 +111,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao adicionar créditos do Radar" },
+      { error: error?.message || "Erro ao adicionar créditos do Radar" },
       { status: 500 }
     );
   }
@@ -99,6 +119,8 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -118,7 +140,7 @@ export async function DELETE(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao remover créditos do Radar" },
+      { error: error?.message || "Erro ao remover créditos do Radar" },
       { status: 500 }
     );
   }
