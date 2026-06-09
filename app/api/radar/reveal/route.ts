@@ -8,7 +8,13 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-async function getRadarLimit(companyId: string) {
+type RadarLimit = {
+  base: number;
+  extra: number;
+  total: number;
+};
+
+async function getRadarLimit(companyId: string): Promise<RadarLimit> {
   const { data: company } = await supabase
     .from("companies")
     .select("plan_id")
@@ -34,7 +40,7 @@ async function getRadarLimit(companyId: string) {
     .or(`expires_at.is.null,expires_at.gt.${now}`);
 
   const extraLimit = (extras || []).reduce(
-    (acc, item) => acc + Number(item.contacts_extra || 0),
+    (acc: number, item: any) => acc + Number(item.contacts_extra || 0),
     0
   );
 
@@ -97,13 +103,16 @@ export async function POST(req: NextRequest) {
     const companyId = auth.companyId;
     const branchId = await resolveBranchId(companyId, auth.branchId);
     const clientId = companyId;
+
     const radarLimit = await getRadarLimit(companyId);
     const planLimit = radarLimit.total;
 
     const body = await req.json();
 
-    const ids = Array.isArray(body?.ids)
-      ? body.ids.map((id: unknown) => String(id).trim()).filter(Boolean)
+    const ids: string[] = Array.isArray(body?.ids)
+      ? body.ids
+          .map((id: unknown) => String(id).trim())
+          .filter((id: string) => id.length > 0)
       : [];
 
     if (!ids.length) {
@@ -125,8 +134,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const alreadyIds = new Set(alreadyExported.map((item) => item.prospectId));
-    const newIds = ids.filter((id) => !alreadyIds.has(id));
+    const alreadyIds = new Set<string>(
+      alreadyExported.map((item) => item.prospectId)
+    );
+
+    const newIds: string[] = ids.filter((id: string) => !alreadyIds.has(id));
 
     const usedBefore = await prisma.prospectExport.count({
       where: { clientId },
