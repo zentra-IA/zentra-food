@@ -2,10 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function monthRef() {
   const d = new Date();
@@ -24,6 +32,7 @@ function tomorrowISO() {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const month = new URL(req.url).searchParams.get("month") || monthRef();
 
@@ -37,48 +46,15 @@ export async function GET(req: NextRequest) {
       appRevenues,
     ] = await Promise.all([
       supabase.from("suppliers").select("*").eq("company_id", companyId).order("name"),
-
-      supabase
-        .from("purchase_invoices")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false }),
-
-      supabase
-        .from("purchase_items")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false }),
-
-      supabase
-        .from("employees")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false }),
-
-      supabase
-        .from("business_expenses")
-        .select("*")
-        .eq("company_id", companyId)
-        .eq("reference_month", month)
-        .order("created_at", { ascending: false }),
-
-      supabase
-        .from("Product")
-        .select("id,name,price,costPrice,active")
-        .eq("company_id", companyId)
-        .order("name"),
-
-      supabase
-        .from("app_revenues")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("received_date", { ascending: false }),
+      supabase.from("purchase_invoices").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
+      supabase.from("purchase_items").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
+      supabase.from("employees").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
+      supabase.from("business_expenses").select("*").eq("company_id", companyId).eq("reference_month", month).order("created_at", { ascending: false }),
+      supabase.from("Product").select("id,name,price,costPrice,active").eq("company_id", companyId).order("name"),
+      supabase.from("app_revenues").select("*").eq("company_id", companyId).order("received_date", { ascending: false }),
     ]);
 
-    const supplierMap = new Map(
-      (suppliers.data || []).map((s: any) => [s.id, s])
-    );
+    const supplierMap = new Map((suppliers.data || []).map((s: any) => [s.id, s]));
 
     const invoicesWithSuppliers = (invoices.data || []).map((inv: any) => ({
       ...inv,
@@ -117,16 +93,11 @@ export async function GET(req: NextRequest) {
               ? "tomorrow"
               : "future",
         })),
-
       ...(expenses.data || [])
         .filter((x: any) => !x.paid && x.due_day)
         .map((x: any) => {
           const now = new Date();
-          const due = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            Number(x.due_day)
-          )
+          const due = new Date(now.getFullYear(), now.getMonth(), Number(x.due_day))
             .toISOString()
             .slice(0, 10);
 
@@ -147,7 +118,7 @@ export async function GET(req: NextRequest) {
                 : "future",
           };
         }),
-    ].filter((x) => ["overdue", "today", "tomorrow"].includes(x.status));
+    ].filter((x: any) => ["overdue", "today", "tomorrow"].includes(x.status));
 
     return NextResponse.json({
       success: true,
@@ -161,9 +132,9 @@ export async function GET(req: NextRequest) {
       appRevenues: appRevenues.data || [],
       reminders,
     });
-  } catch (e: any) {
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: e.message },
+      { success: false, error: error?.message || "Erro ao buscar ERP" },
       { status: 500 }
     );
   }
@@ -171,91 +142,37 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
-    if (body.action === "purchase-invoice") {
-      const { data, error } = await supabase
-        .from("purchase_invoices")
-        .insert({
-          company_id: companyId,
-          branch_id: branchId || null,
-          supplier_id: body.supplier_id || null,
-          invoice_number: body.invoice_number || null,
-          payment_method: body.payment_method || "avista",
-          due_date: body.due_date || null,
-          total_amount: Number(body.total_amount || 0),
-          paid: Boolean(body.paid),
-          notes: body.notes || null,
-        })
-        .select("*")
-        .single();
+    const base = {
+      company_id: companyId,
+      branch_id: branchId || null,
+    };
 
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
-    }
-
-    if (body.action === "supplier") {
-      const { data, error } = await supabase
-        .from("suppliers")
-        .insert({
-          company_id: companyId,
-          branch_id: branchId || null,
-          name: body.name,
-          phone: body.phone || null,
-          document: body.document || null,
-        })
-        .select("*")
-        .single();
-
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
-    }
-
-    if (body.action === "purchase") {
-      const { data, error } = await supabase
-        .from("purchase_items")
-        .insert({
-          company_id: companyId,
-          branch_id: branchId || null,
-          invoice_id: body.invoice_id || null,
-          name: body.name,
-          supplier_id: body.supplier_id || null,
-          quantity: Number(body.quantity || 0),
-          unit: body.unit || "un",
-          unit_price: Number(body.unit_price || 0),
-          total_amount: Number(body.total_amount || 0),
-          payment_method: body.payment_method || "avista",
-          due_date: body.due_date || null,
-          paid: Boolean(body.paid),
-          invoice_number: body.invoice_number || null,
-          notes: body.notes || null,
-        })
-        .select("*")
-        .single();
-
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
-    }
+    const actions: Record<string, string> = {
+      "purchase-invoice": "purchase_invoices",
+      supplier: "suppliers",
+      purchase: "purchase_items",
+      "app-revenue": "app_revenues",
+      employee: "employees",
+      expense: "business_expenses",
+    };
 
     if (body.action === "purchase-bulk") {
       const rows = Array.isArray(body.items) ? body.items : [];
-
       let invoiceId = body.invoice_id || null;
 
       if (!invoiceId && body.create_invoice !== false) {
         const invoiceTotal =
           Number(body.total_amount || 0) ||
-          rows.reduce(
-            (sum: number, item: any) => sum + Number(item.total_amount || 0),
-            0
-          );
+          rows.reduce((sum: number, item: any) => sum + Number(item.total_amount || 0), 0);
 
         const createdInvoice = await supabase
           .from("purchase_invoices")
           .insert({
-            company_id: companyId,
-            branch_id: branchId || null,
+            ...base,
             supplier_id: body.supplier_id || null,
             invoice_number: body.invoice_number || null,
             payment_method: body.payment_method || "avista",
@@ -268,13 +185,11 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (createdInvoice.error) throw createdInvoice.error;
-
         invoiceId = createdInvoice.data.id;
       }
 
       const payload = rows.map((item: any) => ({
-        company_id: companyId,
-        branch_id: branchId || null,
+        ...base,
         invoice_id: invoiceId,
         name: item.name,
         supplier_id: item.supplier_id || body.supplier_id || null,
@@ -289,90 +204,98 @@ export async function POST(req: NextRequest) {
         notes: item.notes || null,
       }));
 
-      const { data, error } = await supabase
-        .from("purchase_items")
-        .insert(payload)
-        .select("*");
-
+      const { data, error } = await supabase.from("purchase_items").insert(payload).select("*");
       if (error) throw error;
 
       return NextResponse.json({ success: true, invoice_id: invoiceId, data });
     }
 
-    if (body.action === "app-revenue") {
-      const { data, error } = await supabase
-        .from("app_revenues")
-        .insert({
-          company_id: companyId,
-          branch_id: branchId || null,
-          app_name: body.app_name,
-          received_date: body.received_date,
-          gross_amount: Number(body.gross_amount || 0),
-          fee_amount: Number(body.fee_amount || 0),
-          net_amount: Number(body.net_amount || 0),
-          notes: body.notes || null,
-        })
-        .select("*")
-        .single();
+    const table = actions[body.action];
 
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
+    if (!table) {
+      return NextResponse.json({ success: false, error: "Ação inválida" }, { status: 400 });
     }
 
-    if (body.action === "employee") {
-      const { data, error } = await supabase
-        .from("employees")
-        .insert({
-          company_id: companyId,
-          branch_id: branchId || null,
-          name: body.name,
-          role: body.role || null,
-          salary: Number(body.salary || 0),
-          payment_day_1: Number(body.payment_day_1 || 5),
-          payment_day_2: Number(body.payment_day_2 || 20),
-          has_advance: Boolean(body.has_advance),
-          advance_amount: Number(body.advance_amount || 0),
-          notes: body.notes || null,
-          active: true,
-        })
-        .select("*")
-        .single();
+    const payloadByAction: any = {
+      "purchase-invoice": {
+        ...base,
+        supplier_id: body.supplier_id || null,
+        invoice_number: body.invoice_number || null,
+        payment_method: body.payment_method || "avista",
+        due_date: body.due_date || null,
+        total_amount: Number(body.total_amount || 0),
+        paid: Boolean(body.paid),
+        notes: body.notes || null,
+      },
+      supplier: {
+        ...base,
+        name: body.name,
+        phone: body.phone || null,
+        document: body.document || null,
+      },
+      purchase: {
+        ...base,
+        invoice_id: body.invoice_id || null,
+        name: body.name,
+        supplier_id: body.supplier_id || null,
+        quantity: Number(body.quantity || 0),
+        unit: body.unit || "un",
+        unit_price: Number(body.unit_price || 0),
+        total_amount: Number(body.total_amount || 0),
+        payment_method: body.payment_method || "avista",
+        due_date: body.due_date || null,
+        paid: Boolean(body.paid),
+        invoice_number: body.invoice_number || null,
+        notes: body.notes || null,
+      },
+      "app-revenue": {
+        ...base,
+        app_name: body.app_name,
+        received_date: body.received_date,
+        gross_amount: Number(body.gross_amount || 0),
+        fee_amount: Number(body.fee_amount || 0),
+        net_amount: Number(body.net_amount || 0),
+        notes: body.notes || null,
+      },
+      employee: {
+        ...base,
+        name: body.name,
+        role: body.role || null,
+        salary: Number(body.salary || 0),
+        payment_day_1: Number(body.payment_day_1 || 5),
+        payment_day_2: Number(body.payment_day_2 || 20),
+        has_advance: Boolean(body.has_advance),
+        advance_amount: Number(body.advance_amount || 0),
+        notes: body.notes || null,
+        active: true,
+      },
+      expense: {
+        ...base,
+        name: body.name,
+        type: body.type || "fixed",
+        category: body.category || "Outros",
+        amount: Number(body.amount || 0),
+        due_day: body.due_day ? Number(body.due_day) : null,
+        paid: Boolean(body.paid),
+        recurring: body.recurring !== false,
+        payment_method: body.payment_method || "boleto",
+        notes: body.notes || null,
+        reference_month: body.reference_month || monthRef(),
+      },
+    };
 
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
-    }
+    const { data, error } = await supabase
+      .from(table)
+      .insert(payloadByAction[body.action])
+      .select("*")
+      .single();
 
-    if (body.action === "expense") {
-      const { data, error } = await supabase
-        .from("business_expenses")
-        .insert({
-          company_id: companyId,
-          branch_id: branchId || null,
-          name: body.name,
-          type: body.type || "fixed",
-          category: body.category || "Outros",
-          amount: Number(body.amount || 0),
-          due_day: body.due_day ? Number(body.due_day) : null,
-          paid: Boolean(body.paid),
-          recurring: body.recurring !== false,
-          payment_method: body.payment_method || "boleto",
-          notes: body.notes || null,
-          reference_month: body.reference_month || monthRef(),
-        })
-        .select("*")
-        .single();
+    if (error) throw error;
 
-      if (error) throw error;
-      return NextResponse.json({ success: true, data });
-    }
-
+    return NextResponse.json({ success: true, data });
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: "Ação inválida" },
-      { status: 400 }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { success: false, error: e.message },
+      { success: false, error: error?.message || "Erro ao salvar ERP" },
       { status: 500 }
     );
   }
@@ -380,14 +303,15 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const body = await req.json();
     const updated_at = new Date().toISOString();
 
-    if (body.action === "purchase-invoice") {
-      const { error } = await supabase
-        .from("purchase_invoices")
-        .update({
+    const actionMap: any = {
+      "purchase-invoice": {
+        table: "purchase_invoices",
+        data: {
           supplier_id: body.supplier_id || null,
           invoice_number: body.invoice_number || null,
           payment_method: body.payment_method || "avista",
@@ -396,43 +320,20 @@ export async function PATCH(req: NextRequest) {
           paid: Boolean(body.paid),
           notes: body.notes || null,
           updated_at,
-        })
-        .eq("id", body.id)
-        .eq("company_id", companyId);
-
-      if (error) throw error;
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === "purchase-invoice-paid") {
-      const { error } = await supabase
-        .from("purchase_invoices")
-        .update({
-          paid: Boolean(body.paid),
-          updated_at,
-        })
-        .eq("id", body.id)
-        .eq("company_id", companyId);
-
-      if (error) throw error;
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === "product-cost") {
-      const { error } = await supabase
-        .from("Product")
-        .update({ costPrice: Number(body.costPrice || 0) })
-        .eq("id", body.productId)
-        .eq("company_id", companyId);
-
-      if (error) throw error;
-      return NextResponse.json({ success: true });
-    }
-
-    if (body.action === "app-revenue") {
-      const { error } = await supabase
-        .from("app_revenues")
-        .update({
+        },
+      },
+      "purchase-invoice-paid": {
+        table: "purchase_invoices",
+        data: { paid: Boolean(body.paid), updated_at },
+      },
+      "product-cost": {
+        table: "Product",
+        data: { costPrice: Number(body.costPrice || 0) },
+        idField: "productId",
+      },
+      "app-revenue": {
+        table: "app_revenues",
+        data: {
           app_name: body.app_name,
           received_date: body.received_date,
           gross_amount: Number(body.gross_amount || 0),
@@ -440,43 +341,38 @@ export async function PATCH(req: NextRequest) {
           net_amount: Number(body.net_amount || 0),
           notes: body.notes || null,
           updated_at,
-        })
-        .eq("id", body.id)
-        .eq("company_id", companyId);
+        },
+      },
+      "purchase-paid": {
+        table: "purchase_items",
+        data: { paid: Boolean(body.paid), updated_at },
+      },
+      "expense-paid": {
+        table: "business_expenses",
+        data: { paid: Boolean(body.paid), updated_at },
+      },
+    };
 
-      if (error) throw error;
-      return NextResponse.json({ success: true });
+    const config = actionMap[body.action];
+
+    if (!config) {
+      return NextResponse.json({ success: false, error: "Ação inválida" }, { status: 400 });
     }
 
-    if (body.action === "purchase-paid") {
-      const { error } = await supabase
-        .from("purchase_items")
-        .update({ paid: Boolean(body.paid), updated_at })
-        .eq("id", body.id)
-        .eq("company_id", companyId);
+    const id = config.idField ? body[config.idField] : body.id;
 
-      if (error) throw error;
-      return NextResponse.json({ success: true });
-    }
+    const { error } = await supabase
+      .from(config.table)
+      .update(config.data)
+      .eq("id", id)
+      .eq("company_id", companyId);
 
-    if (body.action === "expense-paid") {
-      const { error } = await supabase
-        .from("business_expenses")
-        .update({ paid: Boolean(body.paid), updated_at })
-        .eq("id", body.id)
-        .eq("company_id", companyId);
+    if (error) throw error;
 
-      if (error) throw error;
-      return NextResponse.json({ success: true });
-    }
-
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: "Ação inválida" },
-      { status: 400 }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { success: false, error: e.message },
+      { success: false, error: error?.message || "Erro ao atualizar ERP" },
       { status: 500 }
     );
   }
@@ -484,6 +380,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const { searchParams } = new URL(req.url);
 
@@ -497,16 +394,16 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    if (
-      ![
-        "suppliers",
-        "purchase_items",
-        "purchase_invoices",
-        "employees",
-        "business_expenses",
-        "app_revenues",
-      ].includes(table)
-    ) {
+    const allowedTables = [
+      "suppliers",
+      "purchase_items",
+      "purchase_invoices",
+      "employees",
+      "business_expenses",
+      "app_revenues",
+    ];
+
+    if (!allowedTables.includes(table)) {
       return NextResponse.json(
         { success: false, error: "Tabela inválida" },
         { status: 400 }
@@ -522,9 +419,9 @@ export async function DELETE(req: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ success: true });
-  } catch (e: any) {
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: e.message },
+      { success: false, error: error?.message || "Erro ao excluir ERP" },
       { status: 500 }
     );
   }
