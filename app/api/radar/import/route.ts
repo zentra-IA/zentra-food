@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
+import { requireCompany } from "@/lib/server-company";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,10 +44,12 @@ function chunkArray<T>(array: T[], size: number) {
   return chunks;
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   let jobId: string | null = null;
 
   try {
+    const { companyId, branchId } = requireCompany(req);
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json<any>(sheet);
 
-    let totalRows = rows.length;
+    const totalRows = rows.length;
     let created = 0;
     let updated = 0;
     let duplicated = 0;
@@ -72,6 +75,8 @@ export async function POST(req: Request) {
 
     const job = await prisma.prospectImportJob.create({
       data: {
+        company_id: companyId,
+        branch_id: branchId || null,
         fileName: file.name,
         totalRows,
         status: "PROCESSING",
@@ -80,7 +85,7 @@ export async function POST(req: Request) {
 
     jobId = job.id;
 
-    const prepared = [];
+    const prepared: any[] = [];
     const seenKeys = new Set<string>();
 
     for (const row of rows) {
@@ -119,6 +124,8 @@ export async function POST(req: Request) {
       seenKeys.add(key);
 
       prepared.push({
+        company_id: companyId,
+        branch_id: branchId || null,
         name,
         age,
         email,
@@ -128,6 +135,7 @@ export async function POST(req: Request) {
         city,
         address: clean(row.endereco),
         cep: clean(row.cep),
+        active: true,
       });
     }
 
@@ -144,30 +152,11 @@ export async function POST(req: Request) {
 
       const existing = await prisma.prospect.findMany({
         where: {
+          company_id: companyId,
           OR: [
-            emails.length
-              ? {
-                  email: {
-                    in: emails,
-                  },
-                }
-              : undefined,
-
-            phones.length
-              ? {
-                  phone1: {
-                    in: phones,
-                  },
-                }
-              : undefined,
-
-            phones.length
-              ? {
-                  phone2: {
-                    in: phones,
-                  },
-                }
-              : undefined,
+            emails.length ? { email: { in: emails } } : undefined,
+            phones.length ? { phone1: { in: phones } } : undefined,
+            phones.length ? { phone2: { in: phones } } : undefined,
           ].filter(Boolean) as any,
         },
         select: {
@@ -192,7 +181,7 @@ export async function POST(req: Request) {
         if (item.phone2) existingMap.set(item.phone2, item);
       }
 
-      const toCreate = [];
+      const toCreate: any[] = [];
 
       for (const item of batch) {
         const match =
@@ -263,7 +252,7 @@ export async function POST(req: Request) {
         where: { id: jobId },
         data: {
           status: "ERROR",
-          error: error.message || "Erro interno",
+          error: error?.message || "Erro interno",
         },
       });
     }
@@ -271,7 +260,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Erro interno ao importar.",
+        error: error?.message || "Erro interno ao importar.",
       },
       { status: 500 }
     );
