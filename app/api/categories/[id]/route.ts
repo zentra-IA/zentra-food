@@ -56,7 +56,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     const existing = await prisma.category.findFirst({
       where: {
         id,
-        companyId,
+        company_id: companyId,
       },
     });
 
@@ -73,7 +73,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       where: {
         id: { not: id },
         slug,
-        companyId,
+        company_id: companyId,
       },
     });
 
@@ -124,7 +124,7 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
     const existing = await prisma.category.findFirst({
       where: {
         id,
-        companyId,
+        company_id: companyId,
       },
     });
 
