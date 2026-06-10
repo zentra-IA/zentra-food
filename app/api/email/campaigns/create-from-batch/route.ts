@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
@@ -19,10 +28,13 @@ export async function POST(req: NextRequest) {
     const batchId = String(body.batchId || "").trim();
 
     if (!name || !subject || !html || !emailAccountId || !batchId) {
-      return NextResponse.json({
-        success: false,
-        error: "Nome, assunto, mensagem, conta e lote são obrigatórios",
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Nome, assunto, mensagem, conta e lote são obrigatórios",
+        },
+        { status: 400 }
+      );
     }
 
     const { data: batch, error: batchError } = await supabase
@@ -33,10 +45,13 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (batchError || !batch) {
-      return NextResponse.json({
-        success: false,
-        error: "Lote não encontrado",
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Lote não encontrado",
+        },
+        { status: 404 }
+      );
     }
 
     const { data: batchContacts, error: batchContactsError } = await supabase
@@ -47,13 +62,18 @@ export async function POST(req: NextRequest) {
 
     if (batchContactsError) throw batchContactsError;
 
-    const contactIds = (batchContacts || []).map((item: any) => item.contact_id);
+    const contactIds = (batchContacts || []).map(
+      (item: any) => item.contact_id
+    );
 
     if (!contactIds.length) {
-      return NextResponse.json({
-        success: false,
-        error: "Este lote não possui contatos",
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Este lote não possui contatos",
+        },
+        { status: 400 }
+      );
     }
 
     const { data: contacts, error: contactsError } = await supabase
@@ -67,10 +87,13 @@ export async function POST(req: NextRequest) {
     const validContacts = (contacts || []).filter((c: any) => c.email);
 
     if (!validContacts.length) {
-      return NextResponse.json({
-        success: false,
-        error: "Nenhum contato válido no lote",
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Nenhum contato válido no lote",
+        },
+        { status: 400 }
+      );
     }
 
     const { data: campaign, error: campaignError } = await supabase
@@ -111,13 +134,13 @@ export async function POST(req: NextRequest) {
       campaign,
       recipients: recipients.length,
     });
-  } catch (e: any) {
-    console.error("CREATE EMAIL CAMPAIGN FROM BATCH:", e);
+  } catch (error: any) {
+    console.error("CREATE EMAIL CAMPAIGN FROM BATCH:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: e.message || "Erro ao criar campanha",
+        error: error?.message || "Erro ao criar campanha",
       },
       { status: 500 }
     );
