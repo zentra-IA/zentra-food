@@ -3,20 +3,32 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
-    const campaignId = String(body.campaignId || "");
+    const campaignId = String(body.campaignId || "").trim();
 
     if (!campaignId) {
-      return NextResponse.json({ success: false, error: "campaignId obrigatório" });
+      return NextResponse.json(
+        { success: false, error: "campaignId obrigatório" },
+        { status: 400 }
+      );
     }
 
     const { data: campaign, error: campaignError } = await supabase
@@ -26,7 +38,9 @@ export async function POST(req: NextRequest) {
       .eq("company_id", companyId)
       .single();
 
-    if (campaignError || !campaign) throw new Error("Campanha não encontrada");
+    if (campaignError || !campaign) {
+      throw new Error("Campanha não encontrada");
+    }
 
     if (!campaign.email_account_id) {
       throw new Error("Campanha sem conta de envio vinculada");
@@ -85,7 +99,7 @@ export async function POST(req: NextRequest) {
           .from("email_campaign_recipients")
           .update({
             status: "error",
-            error: e.message || "Erro ao enviar",
+            error: e?.message || "Erro ao enviar",
           })
           .eq("id", recipient.id);
       }
@@ -101,16 +115,11 @@ export async function POST(req: NextRequest) {
       .eq("id", campaignId)
       .eq("company_id", companyId);
 
-    return NextResponse.json({
-      success: true,
-      sent,
-    });
+    return NextResponse.json({ success: true, sent });
   } catch (e: any) {
-    console.error("EMAIL CAMPAIGN SEND:", e);
-
-    return NextResponse.json({
-      success: false,
-      error: e.message || "Erro ao enviar campanha",
-    });
+    return NextResponse.json(
+      { success: false, error: e?.message || "Erro ao enviar campanha" },
+      { status: 500 }
+    );
   }
 }
