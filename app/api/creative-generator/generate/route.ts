@@ -1,27 +1,17 @@
-import dotenv from "dotenv";
 import { NextResponse } from "next/server";
 
-dotenv.config({ path: ".env.local", override: true });
-
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function imageSize(format: string) {
   if (format === "story") return "1024x1536";
   if (format === "feed") return "1536x1024";
-
   return "1024x1024";
 }
 
 export async function POST(req: Request) {
   try {
-    console.log("========== GERADOR ==========");
-
-    const key = process.env.OPENAI_API_KEY;
-
-    console.log(
-      "OPENAI:",
-      key ? key.slice(-10) : "SEM CHAVE"
-    );
+    const key = process.env.OPENAI_API_KEY || process.env.OPENAI_SUPPORT_KEY;
 
     if (!key) {
       return NextResponse.json(
@@ -43,12 +33,7 @@ export async function POST(req: Request) {
     } = body;
 
     const textPrompt = `
-Você é um especialista em marketing para:
-
-- pizzaria
-- hamburgueria
-- açaí
-- delivery
+Você é um especialista em marketing para pizzaria, hamburgueria, açaí e delivery.
 
 Crie conteúdo persuasivo.
 
@@ -62,7 +47,6 @@ Pedido:
 ${prompt}
 
 Retorne JSON:
-
 {
  "statusText":"",
  "instagramCaption":"",
@@ -71,76 +55,39 @@ Retorne JSON:
 }
 `;
 
-    console.log("GERANDO TEXTO");
+    const textRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: textPrompt }],
+        temperature: 0.8,
+      }),
+    });
 
-    const textRes = await fetch(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-
-          messages: [
-            {
-              role: "user",
-              content: textPrompt,
-            },
-          ],
-
-          temperature: 0.8,
-        }),
-      }
-    );
-
-    const textData =
-      await textRes.json();
-
-    console.log(
-      "STATUS TEXTO:",
-      textRes.status
-    );
+    const textData = await textRes.json();
 
     if (!textRes.ok) {
-      console.log(textData);
-
-      throw new Error(
-        textData?.error?.message ||
-          "Erro texto"
-      );
+      throw new Error(textData?.error?.message || "Erro texto");
     }
 
-    const raw =
-      textData?.choices?.[0]
-        ?.message?.content || "{}";
+    const raw = textData?.choices?.[0]?.message?.content || "{}";
 
-    const cleaned = raw
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
+    const cleaned = raw.replace(/```json/g, "").replace(/```/g, "").trim();
 
     let parsed;
 
     try {
-      parsed =
-        JSON.parse(cleaned);
+      parsed = JSON.parse(cleaned);
     } catch {
       parsed = {
         statusText: raw,
-
-        instagramCaption:
-          raw,
-
-        whatsappText:
-          raw,
-
-        hashtags:
-          "#pizza #food #delivery",
+        instagramCaption: raw,
+        whatsappText: raw,
+        hashtags: "#pizza #food #delivery",
       };
     }
 
@@ -157,7 +104,6 @@ Campanha:
 ${prompt}
 
 Visual:
-
 - comida apetitosa
 - pizza premium
 - hamburguer
@@ -168,107 +114,48 @@ Visual:
 - iluminação bonita
 `;
 
-    console.log(
-      "GERANDO IMAGEM"
-    );
+    const imageRes = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt: imagePrompt,
+        size: imageSize(format),
+        quality: "medium",
+        n: 1,
+      }),
+    });
 
-    const imageRes =
-      await fetch(
-        "https://api.openai.com/v1/images/generations",
-        {
-          method: "POST",
-
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            model: "gpt-image-1",
-
-            prompt:
-              imagePrompt,
-
-            size:
-              imageSize(
-                format
-              ),
-
-            quality:
-              "medium",
-
-            n: 1,
-          }),
-        }
-      );
-
-    const imageData =
-      await imageRes.json();
-
-    console.log(
-      "OPENAI IMAGE:"
-    );
-
-    console.log(imageData);
+    const imageData = await imageRes.json();
 
     if (!imageRes.ok) {
-      throw new Error(
-        imageData?.error
-          ?.message ||
-          "Erro imagem"
-      );
+      throw new Error(imageData?.error?.message || "Erro imagem");
     }
 
-    const b64 =
-      imageData?.data?.[0]
-        ?.b64_json;
+    const b64 = imageData?.data?.[0]?.b64_json;
 
     if (!b64) {
-      throw new Error(
-        "Imagem não retornada"
-      );
+      throw new Error("Imagem não retornada");
     }
-
-    console.log(
-      "SUCESSO"
-    );
 
     return NextResponse.json({
       success: true,
-
-      imageUrl:
-        `data:image/png;base64,${b64}`,
-
-      statusText:
-        parsed.statusText,
-
-      instagramCaption:
-        parsed.instagramCaption,
-
-      whatsappText:
-        parsed.whatsappText,
-
-      hashtags:
-        parsed.hashtags,
+      imageUrl: `data:image/png;base64,${b64}`,
+      statusText: parsed.statusText,
+      instagramCaption: parsed.instagramCaption,
+      whatsappText: parsed.whatsappText,
+      hashtags: parsed.hashtags,
     });
   } catch (error: any) {
-    console.log(
-      "ERRO:"
-    );
-
-    console.log(error);
-
     return NextResponse.json(
       {
         success: false,
-        error:
-          error.message ||
-          "Erro interno",
+        error: error?.message || "Erro interno",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
+
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 const MAX_PER_SESSION_DAY = 30;
 
@@ -29,6 +42,7 @@ function daysStopped(lead: any) {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const { searchParams } = new URL(req.url);
 
@@ -50,7 +64,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    const leads = (data || []).filter((lead) => {
+    const leads = (data || []).filter((lead: any) => {
       if (!lead.phone) return false;
       if (lead.ai_paused === true) return false;
       if (lead.paused === true) return false;
@@ -61,7 +75,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(leads);
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao carregar campanha" },
+      { error: error?.message || "Erro ao carregar campanha" },
       { status: 500 }
     );
   }
@@ -69,6 +83,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
@@ -89,7 +104,7 @@ export async function POST(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    const eligible = (leads || []).filter((lead) => {
+    const eligible = (leads || []).filter((lead: any) => {
       if (!lead.phone) return false;
       if (lead.ai_paused === true) return false;
       if (lead.paused === true) return false;
@@ -186,7 +201,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao iniciar campanha" },
+      { error: error?.message || "Erro ao iniciar campanha" },
       { status: 500 }
     );
   }
@@ -194,6 +209,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
@@ -218,7 +234,7 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao atualizar campanha" },
+      { error: error?.message || "Erro ao atualizar campanha" },
       { status: 500 }
     );
   }

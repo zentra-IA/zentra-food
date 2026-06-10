@@ -2,13 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCompanyId } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
+
     const companyId =
       getCompanyId(req) ||
       process.env.DEFAULT_COMPANY_ID ||
@@ -20,10 +30,7 @@ export async function POST(req: NextRequest) {
     const subtotal = Number(body?.subtotal || 0);
 
     if (!code) {
-      return NextResponse.json(
-        { error: "Informe um cupom" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Informe um cupom" }, { status: 400 });
     }
 
     const { data: coupon, error } = await supabase
@@ -34,38 +41,22 @@ export async function POST(req: NextRequest) {
       .eq("active", true)
       .maybeSingle();
 
-    if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
+    if (error) throw error;
 
     if (!coupon) {
-      return NextResponse.json(
-        { error: "Cupom inválido" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Cupom inválido" }, { status: 404 });
     }
 
-    if (coupon.expires_at) {
-      const today = new Date();
-      const expiresAt = new Date(coupon.expires_at);
-
-      if (expiresAt < today) {
-        return NextResponse.json(
-          { error: "Cupom expirado" },
-          { status: 400 }
-        );
-      }
+    if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+      return NextResponse.json({ error: "Cupom expirado" }, { status: 400 });
     }
 
     if (Number(coupon.min_order || 0) > subtotal) {
       return NextResponse.json(
         {
-          error: `Pedido mínimo de R$ ${Number(
-            coupon.min_order || 0
-          ).toFixed(2)}`,
+          error: `Pedido mínimo de R$ ${Number(coupon.min_order || 0).toFixed(
+            2
+          )}`,
         },
         { status: 400 }
       );

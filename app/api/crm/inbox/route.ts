@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
+
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const { searchParams } = new URL(req.url);
     const leadId = searchParams.get("leadId");
 
-    // ==========================================
-    // CARREGAR CONVERSA
-    // ==========================================
     if (leadId) {
       const { data: lead, error: leadError } = await supabase
         .from("leads")
@@ -26,7 +37,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json([]);
       }
 
-      // marca como lida
       await supabase
         .from("leads")
         .update({
@@ -42,7 +52,7 @@ export async function GET(req: NextRequest) {
         .eq("company_id", companyId)
         .eq("phone", lead.phone);
 
-      const leadIds = (samePhoneLeads || []).map((item) => item.id);
+      const leadIds = (samePhoneLeads || []).map((item: any) => item.id);
 
       const { data: messages, error: msgError } = await supabase
         .from("messages")
@@ -50,17 +60,16 @@ export async function GET(req: NextRequest) {
         .in("lead_id", leadIds.length ? leadIds : [lead.id])
         .order("created_at", { ascending: true });
 
-      if (msgError) {
-        throw new Error(msgError.message);
-      }
+      if (msgError) throw new Error(msgError.message);
 
       const finalMessages = [...(messages || [])];
 
-      // fallback caso exista última mensagem no lead
       if (
         lead.last_message &&
         !finalMessages.some(
-          (msg) => String(msg.content || "").trim() === String(lead.last_message || "").trim()
+          (msg: any) =>
+            String(msg.content || "").trim() ===
+            String(lead.last_message || "").trim()
         )
       ) {
         finalMessages.push({
@@ -69,14 +78,12 @@ export async function GET(req: NextRequest) {
           direction: "received",
           content: lead.last_message,
           created_at:
-            lead.last_message_at ||
-            lead.updated_at ||
-            lead.created_at,
+            lead.last_message_at || lead.updated_at || lead.created_at,
         });
       }
 
       finalMessages.sort(
-        (a, b) =>
+        (a: any, b: any) =>
           new Date(a.created_at).getTime() -
           new Date(b.created_at).getTime()
       );
@@ -84,9 +91,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(finalMessages);
     }
 
-    // ==========================================
-    // LISTA DE CONTATOS DO INBOX
-    // ==========================================
     const { data, error } = await supabase
       .from("leads")
       .select("*")
@@ -106,38 +110,27 @@ export async function GET(req: NextRequest) {
       })
       .limit(100);
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (error) throw new Error(error.message);
 
     return NextResponse.json(
-      (data || []).map((lead) => ({
+      (data || []).map((lead: any) => ({
         ...lead,
         unread_count: lead.unread_count || 0,
         latest_received_at:
-          lead.last_message_at ||
-          lead.updated_at ||
-          lead.created_at,
+          lead.last_message_at || lead.updated_at || lead.created_at,
       }))
     );
   } catch (error: any) {
-    console.error("CRM INBOX GET:", error);
-
     return NextResponse.json(
-      {
-        error:
-          error?.message ||
-          "Erro ao carregar inbox",
-      },
-      {
-        status: 500,
-      }
+      { error: error?.message || "Erro ao carregar inbox" },
+      { status: 500 }
     );
   }
 }
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const body = await req.json();
@@ -148,18 +141,11 @@ export async function PATCH(req: NextRequest) {
 
     if (!leadId) {
       return NextResponse.json(
-        {
-          error: "leadId obrigatório",
-        },
-        {
-          status: 400,
-        }
+        { error: "leadId obrigatório" },
+        { status: 400 }
       );
     }
 
-    // ==============================
-    // MARCAR COMO LIDA
-    // ==============================
     if (action === "mark_read") {
       const { error } = await supabase
         .from("leads")
@@ -170,18 +156,11 @@ export async function PATCH(req: NextRequest) {
         .eq("id", leadId)
         .eq("company_id", companyId);
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
-      return NextResponse.json({
-        success: true,
-      });
+      return NextResponse.json({ success: true });
     }
 
-    // ==============================
-    // PAUSAR / RETOMAR IA
-    // ==============================
     const { error } = await supabase
       .from("leads")
       .update({
@@ -191,25 +170,13 @@ export async function PATCH(req: NextRequest) {
       .eq("id", leadId)
       .eq("company_id", companyId);
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (error) throw new Error(error.message);
 
-    return NextResponse.json({
-      success: true,
-    });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error("CRM INBOX PATCH:", error);
-
     return NextResponse.json(
-      {
-        error:
-          error?.message ||
-          "Erro ao atualizar lead",
-      },
-      {
-        status: 500,
-      }
+      { error: error?.message || "Erro ao atualizar lead" },
+      { status: 500 }
     );
   }
 }

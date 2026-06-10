@@ -1,14 +1,23 @@
-import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const supabase = getSupabase();
+    const body = await req.json();
 
     const {
       prompt,
@@ -21,13 +30,13 @@ export async function POST(req: Request) {
       format,
       style,
       user_id,
-    } = body
+    } = body;
 
     if (!prompt) {
       return NextResponse.json(
         { error: "Prompt obrigatório" },
         { status: 400 }
-      )
+      );
     }
 
     const { data, error } = await supabase
@@ -45,27 +54,18 @@ export async function POST(req: Request) {
         style,
       })
       .select()
-      .single()
+      .single();
 
-    if (error) {
-      console.error(error)
-
-      return NextResponse.json(
-        { error: "Erro ao salvar campanha" },
-        { status: 500 }
-      )
-    }
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,
       campaign: data,
-    })
-  } catch (error) {
-    console.error(error)
-
+    });
+  } catch (error: any) {
     return NextResponse.json(
-      { error: "Erro interno ao salvar campanha" },
+      { error: error?.message || "Erro interno ao salvar campanha" },
       { status: 500 }
-    )
+    );
   }
 }
