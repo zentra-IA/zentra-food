@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const [items, movements] = await Promise.all([
@@ -52,10 +61,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Erro ao carregar estoque",
-      },
+      { success: false, error: error?.message || "Erro ao carregar estoque" },
       { status: 500 }
     );
   }
@@ -63,6 +69,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
@@ -181,10 +188,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (error: any) {
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Erro ao salvar estoque",
-      },
+      { success: false, error: error?.message || "Erro ao salvar estoque" },
       { status: 500 }
     );
   }
@@ -192,6 +196,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
@@ -221,10 +226,7 @@ export async function PATCH(req: NextRequest) {
     );
   } catch (error: any) {
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Erro ao atualizar estoque",
-      },
+      { success: false, error: error?.message || "Erro ao atualizar estoque" },
       { status: 500 }
     );
   }
@@ -232,6 +234,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const { searchParams } = new URL(req.url);
 
@@ -258,10 +261,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Erro ao excluir item",
-      },
+      { success: false, error: error?.message || "Erro ao excluir item" },
       { status: 500 }
     );
   }

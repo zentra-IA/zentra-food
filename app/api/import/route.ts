@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function cleanPhone(value: string) {
   return String(value || "").replace(/\D/g, "");
@@ -18,7 +26,9 @@ function parseCSV(text: string) {
 
   if (!lines.length) return [];
 
-  const headers = lines[0].split(",").map((header) => header.trim().toLowerCase());
+  const headers = lines[0]
+    .split(",")
+    .map((header) => header.trim().toLowerCase());
 
   return lines.slice(1).map((line) => {
     const values = line.split(",").map((value) => value.trim());
@@ -34,6 +44,8 @@ function parseCSV(text: string) {
 
 export async function POST(req: Request) {
   try {
+    const supabase = getSupabase();
+
     const formData = await req.formData();
 
     const file = formData.get("file") as File | null;
@@ -72,12 +84,7 @@ export async function POST(req: Request) {
 
     const { error } = await supabase.from("contacts").insert(contacts);
 
-    if (error) {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
-    }
+    if (error) throw error;
 
     return NextResponse.json({
       success: true,
@@ -86,7 +93,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: error.message || "Erro ao importar" },
+      { success: false, error: error?.message || "Erro ao importar" },
       { status: 500 }
     );
   }
