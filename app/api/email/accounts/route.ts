@@ -2,15 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
+export const dynamic = "force-dynamic";
+
 const DEFAULT_BRANCH_ID = "1f07f893-48c6-4b9c-9c5f-4b680a4fef6c";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const { data, error } = await supabase
@@ -21,12 +30,16 @@ export async function GET(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    return NextResponse.json({ success: true, accounts: data || [] });
+    return NextResponse.json({
+      success: true,
+      accounts: data || [],
+    });
   } catch (error: any) {
-    console.error("EMAIL ACCOUNTS GET:", error);
-
     return NextResponse.json(
-      { success: false, error: error.message || "Erro ao carregar contas" },
+      {
+        success: false,
+        error: error?.message || "Erro ao carregar contas",
+      },
       { status: 500 }
     );
   }
@@ -34,6 +47,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
@@ -44,7 +58,10 @@ export async function POST(req: NextRequest) {
 
     if (!domain || !fromEmail) {
       return NextResponse.json(
-        { success: false, error: "Domínio e e-mail remetente são obrigatórios" },
+        {
+          success: false,
+          error: "Domínio e e-mail remetente são obrigatórios",
+        },
         { status: 400 }
       );
     }
@@ -68,12 +85,16 @@ export async function POST(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    return NextResponse.json({ success: true, account: data });
+    return NextResponse.json({
+      success: true,
+      account: data,
+    });
   } catch (error: any) {
-    console.error("EMAIL ACCOUNTS POST:", error);
-
     return NextResponse.json(
-      { success: false, error: error.message || "Erro ao salvar conta" },
+      {
+        success: false,
+        error: error?.message || "Erro ao salvar conta",
+      },
       { status: 500 }
     );
   }
