@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 const DEFAULT_COMPANY_ID = process.env.DEFAULT_COMPANY_ID || null;
 
@@ -18,6 +26,8 @@ function resolveCompanyId(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
+
     const companyId = resolveCompanyId(req);
     const userId = req.cookies.get("zentra_user_id")?.value || null;
 
@@ -34,9 +44,7 @@ export async function GET(req: NextRequest) {
       .eq("id", companyId)
       .maybeSingle();
 
-    if (companyError) {
-      throw new Error(companyError.message);
-    }
+    if (companyError) throw new Error(companyError.message);
 
     if (!company) {
       return NextResponse.json(
@@ -94,10 +102,10 @@ export async function GET(req: NextRequest) {
       .eq("active", true);
 
     const radarBase =
-      features.find((f) => f.feature === "radar")?.limit_value || 0;
+      features.find((f: any) => f.feature === "radar")?.limit_value || 0;
 
     const radarExtra = (radarGrants || []).reduce(
-      (acc, item) => acc + Number(item.contacts_extra || 0),
+      (acc: number, item: any) => acc + Number(item.contacts_extra || 0),
       0
     );
 
@@ -119,7 +127,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Erro ao buscar empresa atual",
+        error: error?.message || "Erro ao buscar empresa atual",
       },
       { status: 500 }
     );
