@@ -1,12 +1,29 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export async function POST(req: Request) {
   try {
+    const supabase = getSupabase();
     const body = await req.json();
 
     const message = String(body.message || "").trim();
-    const whatsappAccounts: number[] = body.whatsappAccounts || [1];
+    const whatsappAccounts: number[] = Array.isArray(body.whatsappAccounts)
+      ? body.whatsappAccounts
+      : [1];
+
     const targetDays = Number(body.targetDays || 1);
 
     if (!message) {
@@ -46,9 +63,7 @@ export async function POST(req: Request) {
     let queued = 0;
 
     for (const lead of leads || []) {
-      const account =
-        whatsappAccounts[queued % whatsappAccounts.length] || 1;
-
+      const account = whatsappAccounts[queued % whatsappAccounts.length] || 1;
       const step = Number(lead.campaign_step || 0) + 1;
 
       await supabase.from("automation_queue").insert({
@@ -86,7 +101,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Erro ao enviar campanha.",
+        error: error?.message || "Erro ao enviar campanha.",
       },
       { status: 500 }
     );

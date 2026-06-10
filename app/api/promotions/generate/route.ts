@@ -1,12 +1,17 @@
-import dotenv from "dotenv";
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-dotenv.config({ path: ".env.local", override: true });
+export const dynamic = "force-dynamic";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_SUPPORT_KEY;
+
+  if (!apiKey) {
+    throw new Error("OpenAI não configurada.");
+  }
+
+  return new OpenAI({ apiKey });
+}
 
 function cleanText(text: string) {
   return String(text || "")
@@ -18,9 +23,11 @@ function cleanText(text: string) {
 
 export async function POST(req: Request) {
   try {
+    const openai = getOpenAI();
+
     const body = await req.json();
     const prompt = body.prompt || "";
-    const images = body.images || [];
+    const images = Array.isArray(body.images) ? body.images : [];
 
     const content: any[] = [
       {
@@ -72,7 +79,7 @@ Retorne somente a mensagem pronta.
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Erro ao gerar campanha",
+        error: error?.message || "Erro ao gerar campanha",
       },
       { status: 500 }
     );
