@@ -2,10 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function cleanPhone(value: string) {
   let phone = String(value || "").replace(/\D/g, "");
@@ -21,6 +29,7 @@ function cleanPhone(value: string) {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const { data, error } = await supabase
@@ -42,8 +51,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
-
     const body = await req.json();
 
     const name = String(body?.name || "Contato WhatsApp").trim();
@@ -94,16 +103,14 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
     if (!id) {
-      return NextResponse.json(
-        { error: "ID obrigatório" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
     }
 
     const { error } = await supabase

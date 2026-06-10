@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
+
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function autoVariations(text: string, type: string, intent: string) {
   const clean = String(text || "").trim();
@@ -33,6 +46,7 @@ function autoVariations(text: string, type: string, intent: string) {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
 
     const { data, error } = await supabase
@@ -46,7 +60,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data || []);
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao carregar mensagens" },
+      { error: error?.message || "Erro ao carregar mensagens" },
       { status: 500 }
     );
   }
@@ -54,6 +68,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
@@ -85,13 +100,15 @@ export async function POST(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    const variations = autoVariations(baseMessage, type, intent).map((content) => ({
-      company_id: companyId,
-      branch_id: branchId || null,
-      template_id: template.id,
-      content,
-      active: true,
-    }));
+    const variations = autoVariations(baseMessage, type, intent).map(
+      (content) => ({
+        company_id: companyId,
+        branch_id: branchId || null,
+        template_id: template.id,
+        content,
+        active: true,
+      })
+    );
 
     if (variations.length) {
       const { error: variationError } = await supabase
@@ -104,7 +121,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, template });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao salvar mensagem" },
+      { error: error?.message || "Erro ao salvar mensagem" },
       { status: 500 }
     );
   }
@@ -112,6 +129,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const body = await req.json();
 
@@ -133,7 +151,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao atualizar mensagem" },
+      { error: error?.message || "Erro ao atualizar mensagem" },
       { status: 500 }
     );
   }
@@ -141,6 +159,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId } = requireCompany(req);
     const { searchParams } = new URL(req.url);
 
@@ -167,7 +186,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao excluir mensagem" },
+      { error: error?.message || "Erro ao excluir mensagem" },
       { status: 500 }
     );
   }
