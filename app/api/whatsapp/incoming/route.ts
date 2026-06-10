@@ -1,11 +1,27 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { openai } from "@/lib/openai";
+import OpenAI from "openai";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_SUPPORT_KEY;
+
+  if (!apiKey) return null;
+
+  return new OpenAI({ apiKey });
+}
 
 const WHATSAPP_SERVER =
   process.env.NEXT_PUBLIC_WHATSAPP_SERVER || "http://localhost:3011";
@@ -44,7 +60,7 @@ function randomDelay(min = 1000, max = 3000) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-async function resolveCompanyBySession(sessionIdRaw: any) {
+async function resolveCompanyBySession(supabase: any, sessionIdRaw: any) {
   const raw = String(sessionIdRaw || "1");
 
   if (raw.includes("_")) {
@@ -84,10 +100,16 @@ function applyVariables(text: string, lead: any) {
     .trim();
 }
 
-async function getTemplateReply(intent: string, lead: any, companyId: string) {
+async function getTemplateReply(
+  supabase: any,
+  intent: string,
+  lead: any,
+  companyId: string
+) {
   const { data: template } = await supabase
     .from("message_templates")
     .select("id, base_message")
+    .eq("company_id", companyId)
     .eq("type", "ai")
     .eq("intent", intent)
     .eq("active", true)
@@ -104,7 +126,7 @@ async function getTemplateReply(intent: string, lead: any, companyId: string) {
     .eq("active", true);
 
   const list = variations?.length
-    ? variations.map((v) => v.content)
+    ? variations.map((v: any) => v.content)
     : [template.base_message];
 
   return applyVariables(list[Math.floor(Math.random() * list.length)], lead);
@@ -173,43 +195,37 @@ function detectIntent(text: string) {
 }
 
 async function saveReceivedMessage(
+  supabase: any,
   leadId: string,
-  message: string,
-  companyId: string,
-  branchId: string | null
+  message: string
 ) {
   const receivedInsert = await supabase.from("messages").insert({
-  lead_id: leadId,
-  direction: "received",
-  topic: "whatsapp",
-  extension: "text",
-  content: message,
-  event: "message_received",
-  payload: {},
-  created_at: new Date().toISOString(),
-});
+    lead_id: leadId,
+    direction: "received",
+    topic: "whatsapp",
+    extension: "text",
+    content: message,
+    event: "message_received",
+    payload: {},
+    created_at: new Date().toISOString(),
+  });
 
   if (receivedInsert.error) {
     console.error("ERRO AO SALVAR MENSAGEM RECEBIDA:", receivedInsert.error);
   }
 }
 
-async function saveSentMessage(
-  leadId: string,
-  reply: string,
-  companyId: string,
-  branchId: string | null
-) {
+async function saveSentMessage(supabase: any, leadId: string, reply: string) {
   const sentInsert = await supabase.from("messages").insert({
-  lead_id: leadId,
-  direction: "sent",
-  topic: "whatsapp",
-  extension: "text",
-  content: reply,
-  event: "message_sent",
-  payload: {},
-  created_at: new Date().toISOString(),
-});
+    lead_id: leadId,
+    direction: "sent",
+    topic: "whatsapp",
+    extension: "text",
+    content: reply,
+    event: "message_sent",
+    payload: {},
+    created_at: new Date().toISOString(),
+  });
 
   if (sentInsert.error) {
     console.error("ERRO AO SALVAR MENSAGEM ENVIADA:", sentInsert.error);
@@ -217,14 +233,13 @@ async function saveSentMessage(
 }
 
 async function replyAndSave({
+  supabase,
   sessionId,
   phone,
   lid,
   isLid,
   leadId,
   reply,
-  companyId,
-  branchId,
 }: any) {
   const result = await sendMessage({
     sessionId,
@@ -235,7 +250,7 @@ async function replyAndSave({
   });
 
   if (result?.success !== false) {
-    await saveSentMessage(leadId, reply, companyId, branchId);
+    await saveSentMessage(supabase, leadId, reply);
   }
 
   return result;
@@ -243,7 +258,9 @@ async function replyAndSave({
 
 async function generateAIReply(message: string, lead: any) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    const openai = getOpenAI();
+
+    if (!openai) {
       return `Oi! 😄 Posso te ajudar com cardápio, combos, promoções, entrega ou pagamento.
 
 Cardápio:
@@ -288,15 +305,21 @@ ${CARDAPIO_URL}`;
 }
 
 async function getFinalReply(
+  supabase: any,
   intent: string,
   message: string,
   lead: any,
   companyId: string
 ) {
-  const templateReply = await getTemplateReply(intent, lead, companyId);
+  const templateReply = await getTemplateReply(supabase, intent, lead, companyId);
   if (templateReply) return templateReply;
 
-  const defaultTemplate = await getTemplateReply("DEFAULT", lead, companyId);
+  const defaultTemplate = await getTemplateReply(
+    supabase,
+    "DEFAULT",
+    lead,
+    companyId
+  );
   if (defaultTemplate) return defaultTemplate;
 
   return await generateAIReply(message, lead);
@@ -304,6 +327,7 @@ async function getFinalReply(
 
 export async function POST(req: Request) {
   try {
+    const supabase = getSupabase();
     const body = await req.json();
 
     const rawPhone = clean(body.phone || "");
@@ -320,7 +344,10 @@ export async function POST(req: Request) {
     const remoteJid = body.remoteJid || null;
     const message = String(body.message || "").trim();
 
-    const resolved = await resolveCompanyBySession(body.sessionId || "1");
+    const resolved = await resolveCompanyBySession(
+      supabase,
+      body.sessionId || "1"
+    );
 
     const companyId = resolved.companyId;
     const branchId = resolved.branchId;
@@ -440,7 +467,7 @@ export async function POST(req: Request) {
       );
     }
 
-    await saveReceivedMessage(lead.id, message, companyId, branchId);
+    await saveReceivedMessage(supabase, lead.id, message);
 
     await supabase
       .from("leads")
@@ -470,18 +497,17 @@ export async function POST(req: Request) {
 
     if (intent === "SEM_INTERESSE") {
       const reply =
-        (await getTemplateReply("SEM_INTERESSE", lead, companyId)) ||
+        (await getTemplateReply(supabase, "SEM_INTERESSE", lead, companyId)) ||
         "Tudo bem! 😊 Se quiser ver o cardápio ou alguma promoção depois, é só chamar.";
 
       await replyAndSave({
+        supabase,
         sessionId: sendSessionId,
         phone: lead.phone || phone,
         lid,
         isLid: incomingIsLid,
         leadId: lead.id,
         reply,
-        companyId,
-        branchId,
       });
 
       await supabase
@@ -499,17 +525,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, action: "sem_interesse" });
     }
 
-    const reply = await getFinalReply(intent, message, lead, companyId);
+    const reply = await getFinalReply(
+      supabase,
+      intent,
+      message,
+      lead,
+      companyId
+    );
 
     await replyAndSave({
+      supabase,
       sessionId: sendSessionId,
       phone: lead.phone || phone,
       lid,
       isLid: incomingIsLid,
       leadId: lead.id,
       reply,
-      companyId,
-      branchId,
     });
 
     const nextStatus =
@@ -548,8 +579,7 @@ export async function POST(req: Request) {
       {
         success: false,
         error: error?.message || String(error),
-        stack:
-          process.env.NODE_ENV === "development" ? error?.stack : undefined,
+        stack: process.env.NODE_ENV === "development" ? error?.stack : undefined,
       },
       { status: 500 }
     );
