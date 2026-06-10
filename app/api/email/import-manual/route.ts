@@ -2,10 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompany } from "@/lib/server-company";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -13,6 +21,7 @@ function isValidEmail(email: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
     const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
@@ -92,20 +101,22 @@ export async function POST(req: NextRequest) {
         contact_id: contact.id,
       })) || [];
 
-    const { error: linksError } = await supabase
-      .from("email_batch_contacts")
-      .insert(links);
+    if (links.length) {
+      const { error: linksError } = await supabase
+        .from("email_batch_contacts")
+        .insert(links);
 
-    if (linksError) throw linksError;
+      if (linksError) throw linksError;
+    }
 
     return NextResponse.json({
       success: true,
       imported: savedContacts?.length || 0,
       batch,
     });
-  } catch (e: any) {
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: e.message || "Erro ao importar lote" },
+      { success: false, error: error?.message || "Erro ao importar lote" },
       { status: 500 }
     );
   }

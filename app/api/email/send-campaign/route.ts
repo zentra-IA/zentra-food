@@ -1,61 +1,48 @@
-import { Resend } from "resend"
+import { NextResponse } from "next/server";
+import { Resend } from "resend";
 
-const resend=new Resend(
-process.env.RESEND_API_KEY
-)
+export const dynamic = "force-dynamic";
 
-export async function POST(req:Request){
+export async function POST(req: Request) {
+  try {
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error("RESEND_API_KEY não configurada");
+    }
 
-try{
+    if (!process.env.EMAIL_FROM) {
+      throw new Error("EMAIL_FROM não configurado");
+    }
 
-const body=
-await req.json()
+    const resend = new Resend(
+      process.env.RESEND_API_KEY
+    );
 
-for(const contact of body.contacts){
+    const body = await req.json();
 
-await resend.emails.send({
+    for (const contact of body.contacts || []) {
+      await resend.emails.send({
+        from: process.env.EMAIL_FROM,
+        to: contact.email,
+        subject: body.subject || "Campanha",
+        html: `
+          <div>
+            <h2>Olá ${contact.nome || ""}</h2>
+            ${body.html || ""}
+          </div>
+        `,
+      });
+    }
 
-from:
-process.env.EMAIL_FROM!,
-
-to:contact.email,
-
-subject:body.subject,
-
-html:`
-
-<div>
-
-<h2>
-Olá ${contact.nome}
-</h2>
-
-${body.html}
-
-</div>
-
-`
-
-})
-
-}
-
-return Response.json({
-
-success:true
-
-})
-
-}catch(e:any){
-
-return Response.json({
-
-success:false,
-
-error:e.message
-
-})
-
-}
-
+    return NextResponse.json({
+      success: true,
+    });
+  } catch (e: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: e?.message,
+      },
+      { status: 500 }
+    );
+  }
 }
