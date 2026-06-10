@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireCompany } from "@/lib/server-company";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
 async function getRadarLimit(companyId: string) {
+  const supabase = getSupabaseAdmin();
+
   const { data: company } = await supabase
     .from("companies")
     .select("plan_id")
@@ -34,7 +33,7 @@ async function getRadarLimit(companyId: string) {
     .or(`expires_at.is.null,expires_at.gt.${now}`);
 
   const extraLimit = (extras || []).reduce(
-    (acc, item) => acc + Number(item.contacts_extra || 0),
+    (acc: number, item: any) => acc + Number(item.contacts_extra || 0),
     0
   );
 
