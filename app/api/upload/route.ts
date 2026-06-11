@@ -1,44 +1,91 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
+import { createClient } from "@supabase/supabase-js";
+
+export const dynamic = "force-dynamic";
+
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase não configurado.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+function safeExtension(fileName: string) {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "jpg";
+
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
+    return ext;
+  }
+
+  return "jpg";
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabase();
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: "Arquivo não enviado" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Arquivo não enviado" },
+        { status: 400 }
+      );
     }
 
     if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "Envie apenas arquivos de imagem" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Envie apenas arquivos de imagem" },
+        { status: 400 }
+      );
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: "A imagem deve ter no máximo 5MB." }, { status: 400 });
+      return NextResponse.json(
+        { error: "A imagem deve ter no máximo 5MB." },
+        { status: 400 }
+      );
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const ext = safeExtension(file.name);
+    const fileName = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
+    const filePath = `products/${fileName}`;
 
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadDir, { recursive: true });
+    const buffer = Buffer.from(await file.arrayBuffer());
 
-    const ext = file.name.split(".").pop() || "jpg";
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const filePath = path.join(uploadDir, fileName);
+    const { error: uploadError } = await supabase.storage
+      .from("products")
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        upsert: true,
+      });
 
-    await writeFile(filePath, buffer);
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
 
-    const url = `/uploads/${fileName}`;
+    const { data } = supabase.storage
+      .from("products")
+      .getPublicUrl(filePath);
 
-    return NextResponse.json({ url }, { status: 200 });
-  } catch (error) {
+    return NextResponse.json(
+      {
+        url: data.publicUrl,
+        imageUrl: data.publicUrl,
+        path: filePath,
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
     return NextResponse.json(
       {
         error: "Erro ao fazer upload da imagem",
-        details: error instanceof Error ? error.message : String(error),
+        details: error?.message || String(error),
       },
       { status: 500 }
     );
