@@ -1,13 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId } from "@/lib/server-company";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+async function resolveCompanyId(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const slug = searchParams.get("slug");
+
+  if (slug) {
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("slug", slug)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+
+    return data?.id || null;
+  }
+
+  return getCompanyId(req);
+}
+
 export async function GET(req: NextRequest) {
   try {
-    const companyId = getCompanyId(req);
+    const companyId = await resolveCompanyId(req);
 
     if (!companyId) {
       return NextResponse.json(
@@ -21,9 +44,7 @@ export async function GET(req: NextRequest) {
         active: true,
         company_id: companyId,
       },
-      orderBy: {
-        sortOrder: "asc",
-      },
+      orderBy: { sortOrder: "asc" },
       select: {
         id: true,
         name: true,
@@ -33,11 +54,8 @@ export async function GET(req: NextRequest) {
         selectionRequired: true,
         active: true,
         sortOrder: true,
-
         additionalLinks: {
-          orderBy: {
-            createdAt: "asc",
-          },
+          orderBy: { createdAt: "asc" },
           select: {
             additional: {
               select: {
@@ -53,14 +71,9 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-
         productLinks: {
-          where: {
-            company_id: companyId,
-          },
-          orderBy: {
-            sortOrder: "asc",
-          },
+          where: { company_id: companyId },
+          orderBy: { sortOrder: "asc" },
           select: {
             categoryId: true,
             customPrice: true,
@@ -75,14 +88,9 @@ export async function GET(req: NextRequest) {
                 imageUrl: true,
                 active: true,
                 inStock: true,
-
                 productAdditionalConfigs: {
-                  where: {
-                    company_id: companyId,
-                  },
-                  orderBy: {
-                    createdAt: "asc",
-                  },
+                  where: { company_id: companyId },
+                  orderBy: { createdAt: "asc" },
                   select: {
                     additionalId: true,
                     required: true,
@@ -113,15 +121,9 @@ export async function GET(req: NextRequest) {
         .filter((additional) => additional && additional.active);
 
       const products = (category.productLinks || [])
-        .filter(
-          (link) =>
-            link.product &&
-            link.product.active &&
-            link.product.inStock
-        )
+        .filter((link) => link.product && link.product.active && link.product.inStock)
         .map((link) => {
           const basePrice = Number(link.product.price || 0);
-
           const customPrice =
             link.customPrice !== null && link.customPrice !== undefined
               ? Number(link.customPrice)
@@ -157,13 +159,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(formatted, {
       status: 200,
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
-    console.error("ERRO AO BUSCAR CARDÁPIO:", error);
-
     return NextResponse.json(
       {
         error: "Erro ao buscar cardápio",
