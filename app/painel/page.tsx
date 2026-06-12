@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import SupportChat from "@/components/SupportChat";
 
@@ -40,6 +40,7 @@ type MenuItem = {
   href: string;
   emoji?: string;
   feature: FeatureKey;
+  external?: boolean;
 };
 
 const permissions: Record<RoleKey, string[]> = {
@@ -79,13 +80,13 @@ const quickActions: MenuItem[] = [
   { title: "Estoque", href: "/crm/dashboard/estoque", feature: "estoque" },
 ];
 
-const sections: { group: string; items: MenuItem[] }[] = [
+const baseSections: { group: string; items: MenuItem[] }[] = [
   {
     group: "Operação",
     items: [
       { title: "PDV / Balcão", desc: "Atendimento rápido.", href: "/pdv", emoji: "🏪", feature: "pdv" },
       { title: "Pedidos", desc: "Gerenciar pedidos.", href: "/admin/pedidos", emoji: "📦", feature: "pedidos" },
-      { title: "Cardápio", desc: "Ver site do cliente.", href: "/", emoji: "📱", feature: "cardapio" },
+      { title: "Cardápio", desc: "Ver site do cliente.", href: "#", emoji: "📱", feature: "cardapio", external: true },
     ],
   },
   {
@@ -150,8 +151,38 @@ function canAccess(item: MenuItem, companyData: any, role: string) {
 export default function PainelPage() {
   const [companyData, setCompanyData] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const role = companyData?.currentUser?.role || "atendente";
+  const companySlug = companyData?.company?.slug || "";
+
+  const publicMenuPath = companySlug ? `/cardapio/${companySlug}` : "#";
+
+  const publicMenuUrl = useMemo(() => {
+    if (!companySlug) return "";
+
+    if (typeof window === "undefined") {
+      return `/cardapio/${companySlug}`;
+    }
+
+    return `${window.location.origin}/cardapio/${companySlug}`;
+  }, [companySlug]);
+
+  const sections = useMemo(() => {
+    return baseSections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        if (item.feature === "cardapio") {
+          return {
+            ...item,
+            href: publicMenuPath,
+          };
+        }
+
+        return item;
+      }),
+    }));
+  }, [publicMenuPath]);
 
   async function loadCompany() {
     try {
@@ -204,8 +235,29 @@ export default function PainelPage() {
     }
   }
 
+  async function copyPublicMenuLink() {
+    if (!publicMenuUrl) {
+      alert("Empresa ainda não possui slug de cardápio.");
+      return;
+    }
+
+    await navigator.clipboard.writeText(publicMenuUrl);
+    setCopied(true);
+
+    setTimeout(() => {
+      setCopied(false);
+    }, 1800);
+  }
+
   function blockClick(e: React.MouseEvent, item: MenuItem) {
-    if (canAccess(item, companyData, role)) return;
+    if (canAccess(item, companyData, role)) {
+      if (item.feature === "cardapio" && !companySlug) {
+        e.preventDefault();
+        alert("Slug da empresa não encontrado.");
+      }
+
+      return;
+    }
 
     e.preventDefault();
 
@@ -248,9 +300,44 @@ export default function PainelPage() {
               <p className="mt-2 text-xs text-zinc-300">PNG, JPG ou WEBP</p>
             </div>
 
-            <p className="mt-2 max-w-2xl text-sm text-zinc-200 md:text-base">
+            <p className="mt-4 max-w-2xl text-sm text-zinc-200 md:text-base">
               Gerencie PDV, cardápio, pedidos, cupons, BI, ERP, CRM e WhatsApp.
             </p>
+
+            {companySlug && (
+              <div className="mt-5 rounded-3xl bg-white/10 p-4">
+                <p className="text-sm font-black">Link público do cardápio</p>
+
+                <p className="mt-1 text-xs text-zinc-300">
+                  Compartilhe este link com os clientes finais da empresa.
+                </p>
+
+                <div className="mt-3 flex flex-col gap-2 md:flex-row">
+                  <input
+                    readOnly
+                    value={publicMenuUrl}
+                    className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={copyPublicMenuLink}
+                    className="rounded-2xl bg-red-600 px-5 py-3 text-sm font-black text-white transition hover:bg-red-700"
+                  >
+                    {copied ? "Copiado!" : "Copiar"}
+                  </button>
+
+                  <a
+                    href={publicMenuPath}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-2xl bg-white px-5 py-3 text-center text-sm font-black text-zinc-950 transition hover:bg-zinc-100"
+                  >
+                    Abrir
+                  </a>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
               {quickActions.map((item, index) => {
@@ -295,8 +382,10 @@ export default function PainelPage() {
 
                     return (
                       <Link
-                        key={item.href}
+                        key={`${section.group}-${item.title}`}
                         href={item.href}
+                        target={item.external && enabled ? "_blank" : undefined}
+                        rel={item.external && enabled ? "noopener noreferrer" : undefined}
                         onClick={(e) => blockClick(e, item)}
                         className={`group rounded-[1.7rem] border p-4 shadow-sm transition md:p-5 ${
                           enabled
@@ -327,7 +416,11 @@ export default function PainelPage() {
                             enabled ? "text-red-600" : "text-zinc-500"
                           }`}
                         >
-                          {enabled ? "Acessar →" : "Bloqueado 🔒"}
+                          {enabled
+                            ? item.feature === "cardapio"
+                              ? "Abrir cardápio →"
+                              : "Acessar →"
+                            : "Bloqueado 🔒"}
                         </div>
                       </Link>
                     );
