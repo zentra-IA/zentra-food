@@ -4,15 +4,14 @@ import { useEffect, useState } from "react";
 
 const CAMPAIGN_INTENTS = [
   { value: "OPENING", label: "Abertura", desc: "Primeira mensagem do disparo." },
-  { value: "REATIVACAO", label: "Reativação", desc: "Para clientes antigos voltarem a comprar." },
+  { value: "REATIVACAO", label: "Reativação", desc: "Clientes antigos voltarem a comprar." },
   { value: "POS_VENDA", label: "Pós-venda", desc: "Mensagem depois do pedido entregue." },
   { value: "RECUPERACAO", label: "Recuperação", desc: "Cliente que parou no meio do pedido." },
 ];
 
 const AI_INTENTS = [
-  { value: "OPENING", label: "Primeira resposta", desc: "Mensagem inicial quando o cliente chama." },
-  { value: "PERSONALIDADE", label: "Personalidade", desc: "Tom de voz do atendimento." },
-  { value: "FAQ_CUSTOM", label: "Mensagem personalizada", desc: "Pergunta e resposta específica do negócio." },
+  { value: "OPENING", label: "Primeira resposta", desc: "Quando o cliente chama." },
+  { value: "FAQ_CUSTOM", label: "Mensagem por gatilho", desc: "Se o cliente responder X, o robô responde Y." },
   { value: "CARDAPIO", label: "Cardápio", desc: "Quando pede cardápio/produtos." },
   { value: "PROMOCAO", label: "Promoção", desc: "Quando pergunta por ofertas." },
   { value: "PEDIDO", label: "Pedido", desc: "Quando quer comprar." },
@@ -21,6 +20,16 @@ const AI_INTENTS = [
   { value: "HORARIO", label: "Horário", desc: "Horário de funcionamento." },
   { value: "ENDERECO", label: "Endereço", desc: "Localização da empresa." },
   { value: "DEFAULT", label: "Padrão", desc: "Quando a IA não entende." },
+];
+
+const KANBAN_STATUS = [
+  { value: "", label: "Não mover no Kanban" },
+  { value: "novo", label: "Novo" },
+  { value: "respondido", label: "Respondido" },
+  { value: "interesse", label: "Interesse" },
+  { value: "pedido", label: "Pedido" },
+  { value: "finalizado", label: "Finalizado" },
+  { value: "sem_interesse", label: "Sem interesse" },
 ];
 
 function hasFeature(data: any, feature: string) {
@@ -37,18 +46,32 @@ function hasFeature(data: any, feature: string) {
   return Boolean(fromPlan || fromGrant);
 }
 
+function formatTriggers(value: any) {
+  if (Array.isArray(value)) return value.join("\n");
+  return "";
+}
+
 export default function MessagesPage() {
   const [companyData, setCompanyData] = useState<any>(null);
   const [templates, setTemplates] = useState<any[]>([]);
+
   const [type, setType] = useState<"campaign" | "ai">("campaign");
   const [name, setName] = useState("");
   const [intent, setIntent] = useState("OPENING");
   const [baseMessage, setBaseMessage] = useState("");
+  const [triggerKeywords, setTriggerKeywords] = useState("");
+  const [matchType, setMatchType] = useState("contains");
+  const [kanbanStatus, setKanbanStatus] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [mediaType, setMediaType] = useState("text");
+
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const canUseChatbot = hasFeature(companyData, "chatbot_ia");
   const intents = type === "campaign" ? CAMPAIGN_INTENTS : AI_INTENTS;
   const selectedIntent = intents.find((item) => item.value === intent);
+  const isCustomTrigger = type === "ai" && intent === "FAQ_CUSTOM";
 
   async function loadCompany() {
     const res = await fetch("/api/company/current", {
@@ -83,12 +106,42 @@ export default function MessagesPage() {
 
   function changeType(nextType: "campaign" | "ai") {
     if (nextType === "ai" && !canUseChatbot) {
-      alert("Chatbot IA está bloqueado no seu plano atual. Faça upgrade para liberar.");
+      alert("Chatbot IA está bloqueado no seu plano atual.");
       return;
     }
 
     setType(nextType);
     setIntent("OPENING");
+    setTriggerKeywords("");
+    setKanbanStatus("");
+  }
+
+  async function uploadFile(file: File) {
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "message-templates");
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || data.details || "Erro ao enviar arquivo");
+        return;
+      }
+
+      setMediaUrl(data.mediaUrl || data.url);
+      setMediaType(data.mediaType || "file");
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function saveTemplate() {
@@ -99,6 +152,11 @@ export default function MessagesPage() {
 
     if (!name.trim() || !baseMessage.trim()) {
       alert("Preencha nome e mensagem.");
+      return;
+    }
+
+    if (isCustomTrigger && !triggerKeywords.trim()) {
+      alert("Para mensagem por gatilho, preencha pelo menos um gatilho.");
       return;
     }
 
@@ -114,6 +172,11 @@ export default function MessagesPage() {
           name,
           intent,
           base_message: baseMessage,
+          trigger_keywords: triggerKeywords,
+          match_type: matchType,
+          media_url: mediaUrl || null,
+          media_type: mediaUrl ? mediaType : "text",
+          kanban_status: kanbanStatus || null,
         }),
       });
 
@@ -126,6 +189,10 @@ export default function MessagesPage() {
 
       setName("");
       setBaseMessage("");
+      setTriggerKeywords("");
+      setMediaUrl("");
+      setMediaType("text");
+      setKanbanStatus("");
       setIntent("OPENING");
       setType("campaign");
 
@@ -187,7 +254,7 @@ export default function MessagesPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Crie mensagens de disparo e, nos planos liberados, respostas automáticas do Chatbot IA.
+            Crie mensagens de disparo, respostas automáticas por gatilho, áudio, imagem, PDF e movimentação no Kanban.
           </p>
         </section>
 
@@ -202,7 +269,7 @@ export default function MessagesPage() {
             >
               <option value="campaign">Disparo / Campanha</option>
               <option value="ai">
-                Resposta da IA / Chatbot {canUseChatbot ? "" : "🔒"}
+                Resposta automática / Chatbot {canUseChatbot ? "" : "🔒"}
               </option>
             </select>
 
@@ -218,36 +285,104 @@ export default function MessagesPage() {
               ))}
             </select>
 
-            {type === "ai" && !canUseChatbot && (
-              <div className="rounded-2xl border border-yellow-700 bg-yellow-950/30 p-4 text-sm text-yellow-200 md:col-span-2">
-                🔒 Chatbot IA bloqueado no seu plano atual. Você ainda pode criar mensagens de disparo normalmente.
-              </div>
-            )}
-
             {selectedIntent && (
               <div className="rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4 text-sm text-emerald-200 md:col-span-2">
                 <strong>{selectedIntent.label}:</strong> {selectedIntent.desc}
               </div>
             )}
 
+            {isCustomTrigger && (
+              <>
+                <textarea
+                  value={triggerKeywords}
+                  onChange={(e) => setTriggerKeywords(e.target.value)}
+                  placeholder={`Gatilhos do cliente, um por linha.\nEx:\nsim\nquero\nquero simular\ntenho interesse`}
+                  className="input min-h-32 md:col-span-2"
+                />
+
+                <select
+                  value={matchType}
+                  onChange={(e) => setMatchType(e.target.value)}
+                  className="input"
+                >
+                  <option value="contains">Contém a palavra/frase</option>
+                  <option value="exact">Texto exato</option>
+                  <option value="starts_with">Começa com</option>
+                </select>
+
+                <select
+                  value={kanbanStatus}
+                  onChange={(e) => setKanbanStatus(e.target.value)}
+                  className="input"
+                >
+                  {KANBAN_STATUS.map((item) => (
+                    <option key={item.value || "none"} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Nome interno. Ex: Abertura campanha Junho"
+              placeholder="Nome interno. Ex: Resposta FGTS - Quero simular"
               className="input md:col-span-2"
             />
 
             <textarea
               value={baseMessage}
               onChange={(e) => setBaseMessage(e.target.value)}
-              placeholder="Mensagem. Use variáveis: {nome}, {telefone}, {cardapio}"
+              placeholder="Mensagem do robô. Use variáveis: {nome}, {telefone}, {cardapio}"
               className="input min-h-40 md:col-span-2"
             />
+
+            <div className="rounded-2xl border border-zinc-800 bg-black p-4 md:col-span-2">
+              <p className="text-sm font-black">Mídia opcional</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Você pode anexar áudio, imagem, PDF ou vídeo junto com o texto.
+              </p>
+
+              <input
+                type="file"
+                accept="image/*,audio/*,video/*,.pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadFile(file);
+                }}
+                className="mt-3 block w-full text-sm text-zinc-300"
+              />
+
+              {uploading && (
+                <p className="mt-2 text-xs text-yellow-300">
+                  Enviando arquivo...
+                </p>
+              )}
+
+              {mediaUrl && (
+                <div className="mt-3 rounded-xl bg-zinc-900 p-3 text-xs text-zinc-300">
+                  <p>
+                    <strong>Arquivo:</strong> {mediaType}
+                  </p>
+                  <p className="mt-1 break-all text-zinc-500">{mediaUrl}</p>
+                  <button
+                    onClick={() => {
+                      setMediaUrl("");
+                      setMediaType("text");
+                    }}
+                    className="mt-2 rounded-lg bg-red-600 px-3 py-2 text-xs font-black"
+                  >
+                    Remover mídia
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <button
             onClick={saveTemplate}
-            disabled={loading}
+            disabled={loading || uploading}
             className="mt-4 w-full rounded-2xl bg-emerald-600 px-5 py-4 text-sm font-black hover:bg-emerald-700 disabled:opacity-50 md:w-auto"
           >
             {loading ? "Salvando..." : "Salvar mensagem"}
@@ -264,7 +399,7 @@ export default function MessagesPage() {
                 <div>
                   <h3 className="text-lg font-black">{item.name}</h3>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {item.type === "campaign" ? "Disparo" : "Chatbot IA"} ·{" "}
+                    {item.type === "campaign" ? "Disparo" : "Chatbot"} ·{" "}
                     {item.intent} · {item.active ? "Ativa" : "Inativa"}
                   </p>
                 </div>
@@ -286,9 +421,39 @@ export default function MessagesPage() {
                 </div>
               </div>
 
+              {item.trigger_keywords?.length > 0 && (
+                <div className="mt-4 rounded-2xl bg-emerald-950/30 p-4 text-sm text-emerald-200">
+                  <strong>Gatilhos:</strong>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs">
+                    {formatTriggers(item.trigger_keywords)}
+                  </pre>
+                </div>
+              )}
+
               <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-black p-4 text-sm text-zinc-300">
                 {item.base_message}
               </div>
+
+              {item.media_url && (
+                <div className="mt-4 rounded-2xl border border-zinc-800 bg-black p-4 text-sm text-zinc-300">
+                  <p>
+                    <strong>Mídia:</strong> {item.media_type}
+                  </p>
+                  <a
+                    href={item.media_url}
+                    target="_blank"
+                    className="mt-2 block break-all text-emerald-300"
+                  >
+                    {item.media_url}
+                  </a>
+                </div>
+              )}
+
+              {item.kanban_status && (
+                <p className="mt-3 text-xs text-zinc-500">
+                  Move lead para: <strong>{item.kanban_status}</strong>
+                </p>
+              )}
             </article>
           ))}
         </section>

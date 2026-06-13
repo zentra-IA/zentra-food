@@ -17,9 +17,7 @@ function getSupabase() {
 
 function getOpenAI() {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_SUPPORT_KEY;
-
   if (!apiKey) return null;
-
   return new OpenAI({ apiKey });
 }
 
@@ -45,6 +43,25 @@ function normalizePhone(value: string) {
   if (phone.startsWith("55")) return phone;
   if (phone.length === 10 || phone.length === 11) return `55${phone}`;
   return phone;
+}
+
+function normalizeText(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function keywordMatches(message: string, keyword: string, matchType = "contains") {
+  const text = normalizeText(message);
+  const key = normalizeText(keyword);
+
+  if (!key) return false;
+  if (matchType === "exact") return text === key;
+  if (matchType === "starts_with") return text.startsWith(key);
+
+  return text.includes(key);
 }
 
 function isLikelyLid(value: string) {
@@ -132,6 +149,52 @@ async function getTemplateReply(
   return applyVariables(list[Math.floor(Math.random() * list.length)], lead);
 }
 
+async function getCustomTemplate(
+  supabase: any,
+  message: string,
+  lead: any,
+  companyId: string
+) {
+  const { data: templates, error } = await supabase
+    .from("message_templates")
+    .select(
+      "id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status"
+    )
+    .eq("company_id", companyId)
+    .eq("type", "ai")
+    .eq("intent", "FAQ_CUSTOM")
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("ERRO AO BUSCAR GATILHOS PERSONALIZADOS:", error);
+    return null;
+  }
+
+  for (const template of templates || []) {
+    const triggers = Array.isArray(template.trigger_keywords)
+      ? template.trigger_keywords
+      : [];
+
+    const matched = triggers.some((keyword: string) =>
+      keywordMatches(message, keyword, template.match_type || "contains")
+    );
+
+    if (matched) {
+      return {
+        id: template.id,
+        name: template.name,
+        reply: applyVariables(template.base_message || "", lead),
+        mediaUrl: template.media_url || null,
+        mediaType: template.media_type || "text",
+        kanbanStatus: template.kanban_status || null,
+      };
+    }
+  }
+
+  return null;
+}
+
 async function sendMessage({ sessionId, number, message, lid, isLid }: any) {
   await sleep(randomDelay());
 
@@ -148,6 +211,48 @@ async function sendMessage({ sessionId, number, message, lid, isLid }: any) {
   });
 
   return await res.json().catch(() => ({}));
+}
+
+async function sendMedia({
+  sessionId,
+  number,
+  lid,
+  isLid,
+  mediaUrl,
+  mediaType,
+  caption,
+}: any) {
+  if (!mediaUrl) return null;
+
+  try {
+    const res = await fetch(`${WHATSAPP_SERVER}/send-media`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: String(sessionId),
+        number,
+        lid,
+        isLid,
+        mediaUrl,
+        mediaType,
+        caption: caption || "",
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data?.success !== false) {
+      return data;
+    }
+  } catch {}
+
+  return await sendMessage({
+    sessionId,
+    number,
+    lid,
+    isLid,
+    message: caption ? `${caption}\n\n${mediaUrl}` : mediaUrl,
+  });
 }
 
 function isNoInterest(text: string) {
@@ -215,15 +320,24 @@ async function saveReceivedMessage(
   }
 }
 
-async function saveSentMessage(supabase: any, leadId: string, reply: string) {
+async function saveSentMessage(
+  supabase: any,
+  leadId: string,
+  reply: string,
+  mediaUrl?: string | null,
+  mediaType?: string | null
+) {
   const sentInsert = await supabase.from("messages").insert({
     lead_id: leadId,
     direction: "sent",
     topic: "whatsapp",
-    extension: "text",
+    extension: mediaType || "text",
     content: reply,
     event: "message_sent",
-    payload: {},
+    payload: {
+      media_url: mediaUrl || null,
+      media_type: mediaType || "text",
+    },
     created_at: new Date().toISOString(),
   });
 
@@ -240,17 +354,35 @@ async function replyAndSave({
   isLid,
   leadId,
   reply,
+  mediaUrl = null,
+  mediaType = "text",
 }: any) {
-  const result = await sendMessage({
-    sessionId,
-    number: phone,
-    lid,
-    isLid,
-    message: reply,
-  });
+  let result: any = null;
+
+  if (reply) {
+    result = await sendMessage({
+      sessionId,
+      number: phone,
+      lid,
+      isLid,
+      message: reply,
+    });
+  }
+
+  if (mediaUrl) {
+    result = await sendMedia({
+      sessionId,
+      number: phone,
+      lid,
+      isLid,
+      mediaUrl,
+      mediaType,
+      caption: "",
+    });
+  }
 
   if (result?.success !== false) {
-    await saveSentMessage(supabase, leadId, reply);
+    await saveSentMessage(supabase, leadId, reply || mediaUrl, mediaUrl, mediaType);
   }
 
   return result;
@@ -274,12 +406,12 @@ ${CARDAPIO_URL}`;
         {
           role: "system",
           content: `
-Você é o atendente virtual da Zentra Food, uma pizzaria/delivery.
+Você é um atendente virtual.
 Responda em português brasileiro.
 Seja curto, simpático e objetivo.
 Não invente preços.
-Quando o cliente quiser pedir, envie o link do cardápio.
-Link do cardápio: ${CARDAPIO_URL}
+Quando não souber, responda de forma educada e ofereça ajuda.
+Link do cardápio, se fizer sentido: ${CARDAPIO_URL}
           `.trim(),
         },
         {
@@ -291,16 +423,10 @@ Link do cardápio: ${CARDAPIO_URL}
 
     return (
       completion.choices[0]?.message?.content?.trim() ||
-      `Oi! 😄 Posso te ajudar com cardápio, combos, promoções ou pedido.
-
-Cardápio:
-${CARDAPIO_URL}`
+      `Oi! 😄 Posso te ajudar. Me diga o que você precisa.`
     );
   } catch {
-    return `Oi! 😄 Posso te ajudar com cardápio, combos, promoções, entrega ou pagamento.
-
-Cardápio:
-${CARDAPIO_URL}`;
+    return `Oi! 😄 Posso te ajudar. Me diga o que você precisa.`;
   }
 }
 
@@ -311,8 +437,34 @@ async function getFinalReply(
   lead: any,
   companyId: string
 ) {
+  const customTemplate = await getCustomTemplate(
+    supabase,
+    message,
+    lead,
+    companyId
+  );
+
+  if (customTemplate?.reply || customTemplate?.mediaUrl) {
+    return {
+      reply: customTemplate.reply,
+      mediaUrl: customTemplate.mediaUrl,
+      mediaType: customTemplate.mediaType,
+      kanbanStatus: customTemplate.kanbanStatus,
+      source: "custom_trigger",
+      templateId: customTemplate.id,
+    };
+  }
+
   const templateReply = await getTemplateReply(supabase, intent, lead, companyId);
-  if (templateReply) return templateReply;
+  if (templateReply) {
+    return {
+      reply: templateReply,
+      mediaUrl: null,
+      mediaType: "text",
+      kanbanStatus: null,
+      source: "intent_template",
+    };
+  }
 
   const defaultTemplate = await getTemplateReply(
     supabase,
@@ -320,9 +472,24 @@ async function getFinalReply(
     lead,
     companyId
   );
-  if (defaultTemplate) return defaultTemplate;
 
-  return await generateAIReply(message, lead);
+  if (defaultTemplate) {
+    return {
+      reply: defaultTemplate,
+      mediaUrl: null,
+      mediaType: "text",
+      kanbanStatus: null,
+      source: "default_template",
+    };
+  }
+
+  return {
+    reply: await generateAIReply(message, lead),
+    mediaUrl: null,
+    mediaType: "text",
+    kanbanStatus: null,
+    source: "ai",
+  };
 }
 
 export async function POST(req: Request) {
@@ -453,10 +620,7 @@ export async function POST(req: Request) {
         .select("*")
         .single();
 
-      if (created.error) {
-        throw new Error(created.error.message);
-      }
-
+      if (created.error) throw new Error(created.error.message);
       lead = created.data;
     }
 
@@ -498,7 +662,7 @@ export async function POST(req: Request) {
     if (intent === "SEM_INTERESSE") {
       const reply =
         (await getTemplateReply(supabase, "SEM_INTERESSE", lead, companyId)) ||
-        "Tudo bem! 😊 Se quiser ver o cardápio ou alguma promoção depois, é só chamar.";
+        "Tudo bem! 😊 Se quiser falar depois, é só chamar.";
 
       await replyAndSave({
         supabase,
@@ -525,7 +689,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, action: "sem_interesse" });
     }
 
-    const reply = await getFinalReply(
+    const finalReply = await getFinalReply(
       supabase,
       intent,
       message,
@@ -540,15 +704,19 @@ export async function POST(req: Request) {
       lid,
       isLid: incomingIsLid,
       leadId: lead.id,
-      reply,
+      reply: finalReply.reply,
+      mediaUrl: finalReply.mediaUrl,
+      mediaType: finalReply.mediaType,
     });
 
-    const nextStatus =
+    const fallbackStatus =
       intent === "PEDIDO"
         ? "pedido"
         : intent === "CARDAPIO" || intent === "PROMOCAO" || intent === "ENTREGA"
         ? "interesse"
         : "respondido";
+
+    const nextStatus = finalReply.kanbanStatus || fallbackStatus;
 
     await supabase
       .from("leads")
@@ -565,12 +733,14 @@ export async function POST(req: Request) {
       success: true,
       action: "resposta_template_ia",
       intent,
+      source: finalReply.source,
       lead_id: lead.id,
       company_id: companyId,
       phone: lead.phone || phone,
       lid,
       session_id: sessionId,
       send_session_id: sendSessionId,
+      kanban_status: nextStatus,
     });
   } catch (error: any) {
     console.error("ERRO API WHATSAPP INCOMING:", error);

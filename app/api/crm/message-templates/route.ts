@@ -15,6 +15,17 @@ function getSupabase() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
+function normalizeTriggers(value: any): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/\n|,|;/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function autoVariations(text: string, type: string, intent: string) {
   const clean = String(text || "").trim();
 
@@ -77,6 +88,14 @@ export async function POST(req: NextRequest) {
     const intent = String(body.intent || "OPENING");
     const baseMessage = String(body.base_message || "").trim();
 
+    const triggerKeywords = normalizeTriggers(body.trigger_keywords);
+    const matchType = String(body.match_type || "contains");
+    const mediaUrl = body.media_url ? String(body.media_url).trim() : null;
+    const mediaType = String(body.media_type || "text");
+    const kanbanStatus = body.kanban_status
+      ? String(body.kanban_status).trim()
+      : null;
+
     if (!name || !baseMessage) {
       return NextResponse.json(
         { error: "Nome e mensagem são obrigatórios" },
@@ -93,6 +112,11 @@ export async function POST(req: NextRequest) {
         name,
         intent,
         base_message: baseMessage,
+        trigger_keywords: triggerKeywords,
+        match_type: matchType,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        kanban_status: kanbanStatus,
         active: true,
       })
       .select()
@@ -134,15 +158,58 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
 
     const id = String(body.id || "");
-    const active = Boolean(body.active);
 
     if (!id) {
       return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
     }
 
+    const updatePayload: any = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (typeof body.active === "boolean") {
+      updatePayload.active = body.active;
+    }
+
+    if (body.name !== undefined) {
+      updatePayload.name = String(body.name || "").trim();
+    }
+
+    if (body.intent !== undefined) {
+      updatePayload.intent = String(body.intent || "OPENING");
+    }
+
+    if (body.base_message !== undefined) {
+      updatePayload.base_message = String(body.base_message || "").trim();
+    }
+
+    if (body.trigger_keywords !== undefined) {
+      updatePayload.trigger_keywords = normalizeTriggers(body.trigger_keywords);
+    }
+
+    if (body.match_type !== undefined) {
+      updatePayload.match_type = String(body.match_type || "contains");
+    }
+
+    if (body.media_url !== undefined) {
+      updatePayload.media_url = body.media_url
+        ? String(body.media_url).trim()
+        : null;
+    }
+
+    if (body.media_type !== undefined) {
+      updatePayload.media_type = String(body.media_type || "text");
+    }
+
+    if (body.kanban_status !== undefined) {
+      updatePayload.kanban_status = body.kanban_status
+        ? String(body.kanban_status).trim()
+        : null;
+    }
+
     const { error } = await supabase
       .from("message_templates")
-      .update({ active })
+      .update(updatePayload)
       .eq("id", id)
       .eq("company_id", companyId);
 
