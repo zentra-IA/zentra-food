@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const CAMPAIGN_INTENTS = [
   { value: "OPENING", label: "Abertura", desc: "Primeira mensagem do disparo." },
@@ -10,8 +10,8 @@ const CAMPAIGN_INTENTS = [
 ];
 
 const AI_INTENTS = [
-  { value: "OPENING", label: "Primeira resposta", desc: "Quando o cliente chama." },
-  { value: "FAQ_CUSTOM", label: "Mensagem por gatilho", desc: "Se o cliente responder X, o robô responde Y." },
+  { value: "OPENING", label: "Primeira resposta", desc: "Quando o cliente chama pela primeira vez." },
+  { value: "FAQ_CUSTOM", label: "Resposta automática personalizada", desc: "Quando o cliente escrever uma das palavras configuradas, o robô responde automaticamente." },
   { value: "CARDAPIO", label: "Cardápio", desc: "Quando pede cardápio/produtos." },
   { value: "PROMOCAO", label: "Promoção", desc: "Quando pergunta por ofertas." },
   { value: "PEDIDO", label: "Pedido", desc: "Quando quer comprar." },
@@ -19,17 +19,25 @@ const AI_INTENTS = [
   { value: "PAGAMENTO", label: "Pagamento", desc: "PIX, dinheiro, cartão." },
   { value: "HORARIO", label: "Horário", desc: "Horário de funcionamento." },
   { value: "ENDERECO", label: "Endereço", desc: "Localização da empresa." },
-  { value: "DEFAULT", label: "Padrão", desc: "Quando a IA não entende." },
+  { value: "DEFAULT", label: "Resposta padrão", desc: "Quando o robô não encontrar uma resposta específica." },
 ];
 
 const KANBAN_STATUS = [
-  { value: "", label: "Não mover no Kanban" },
-  { value: "novo", label: "Novo" },
-  { value: "respondido", label: "Respondido" },
-  { value: "interesse", label: "Interesse" },
-  { value: "pedido", label: "Pedido" },
+  { value: "", label: "Não alterar etapa" },
+  { value: "novo", label: "Novo lead" },
+  { value: "respondido", label: "Contato respondido" },
+  { value: "interesse", label: "Interessado" },
+  { value: "pedido", label: "Pedido / oportunidade" },
   { value: "finalizado", label: "Finalizado" },
   { value: "sem_interesse", label: "Sem interesse" },
+];
+
+const VARIABLES = [
+  { label: "Nome", value: "{nome}" },
+  { label: "Telefone", value: "{telefone}" },
+  { label: "Última mensagem", value: "{ultima_mensagem}" },
+  { label: "Link WhatsApp", value: "{link_whatsapp}" },
+  { label: "Cardápio", value: "{cardapio}" },
 ];
 
 function hasFeature(data: any, feature: string) {
@@ -52,6 +60,9 @@ function formatTriggers(value: any) {
 }
 
 export default function MessagesPage() {
+  const messageRef = useRef<HTMLTextAreaElement | null>(null);
+  const notifyRef = useRef<HTMLTextAreaElement | null>(null);
+
   const [companyData, setCompanyData] = useState<any>(null);
   const [templates, setTemplates] = useState<any[]>([]);
 
@@ -64,6 +75,12 @@ export default function MessagesPage() {
   const [kanbanStatus, setKanbanStatus] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
   const [mediaType, setMediaType] = useState("text");
+
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const [notifyNumber, setNotifyNumber] = useState("");
+  const [notifyMessage, setNotifyMessage] = useState(
+    "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}"
+  );
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -116,6 +133,38 @@ export default function MessagesPage() {
     setKanbanStatus("");
   }
 
+  function insertVariable(target: "message" | "notify", variable: string) {
+    if (target === "message") {
+      const textarea = messageRef.current;
+      const start = textarea?.selectionStart ?? baseMessage.length;
+      const end = textarea?.selectionEnd ?? baseMessage.length;
+      const next =
+        baseMessage.slice(0, start) + variable + baseMessage.slice(end);
+
+      setBaseMessage(next);
+
+      setTimeout(() => {
+        textarea?.focus();
+        textarea?.setSelectionRange(start + variable.length, start + variable.length);
+      }, 0);
+    }
+
+    if (target === "notify") {
+      const textarea = notifyRef.current;
+      const start = textarea?.selectionStart ?? notifyMessage.length;
+      const end = textarea?.selectionEnd ?? notifyMessage.length;
+      const next =
+        notifyMessage.slice(0, start) + variable + notifyMessage.slice(end);
+
+      setNotifyMessage(next);
+
+      setTimeout(() => {
+        textarea?.focus();
+        textarea?.setSelectionRange(start + variable.length, start + variable.length);
+      }, 0);
+    }
+  }
+
   async function uploadFile(file: File) {
     setUploading(true);
 
@@ -151,12 +200,17 @@ export default function MessagesPage() {
     }
 
     if (!name.trim() || !baseMessage.trim()) {
-      alert("Preencha nome e mensagem.");
+      alert("Preencha nome da automação e resposta automática.");
       return;
     }
 
     if (isCustomTrigger && !triggerKeywords.trim()) {
-      alert("Para mensagem por gatilho, preencha pelo menos um gatilho.");
+      alert("Preencha pelo menos uma frase que o cliente pode escrever.");
+      return;
+    }
+
+    if (notifyEnabled && !notifyNumber.trim()) {
+      alert("Informe o WhatsApp interno que receberá a notificação.");
       return;
     }
 
@@ -177,6 +231,9 @@ export default function MessagesPage() {
           media_url: mediaUrl || null,
           media_type: mediaUrl ? mediaType : "text",
           kanban_status: kanbanStatus || null,
+          notify_enabled: notifyEnabled,
+          notify_number: notifyNumber,
+          notify_message: notifyMessage,
         }),
       });
 
@@ -193,6 +250,11 @@ export default function MessagesPage() {
       setMediaUrl("");
       setMediaType("text");
       setKanbanStatus("");
+      setNotifyEnabled(false);
+      setNotifyNumber("");
+      setNotifyMessage(
+        "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}"
+      );
       setIntent("OPENING");
       setType("campaign");
 
@@ -250,16 +312,16 @@ export default function MessagesPage() {
           </p>
 
           <h1 className="mt-2 text-3xl font-black md:text-5xl">
-            Mensagens
+            Mensagens automáticas
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Crie mensagens de disparo, respostas automáticas por gatilho, áudio, imagem, PDF e movimentação no Kanban.
+            Configure disparos, respostas automáticas, áudio, imagem, PDF, movimentação no Kanban e aviso interno para sua equipe.
           </p>
         </section>
 
         <section className="mt-5 rounded-[2rem] border border-zinc-800 bg-zinc-950 p-5">
-          <h2 className="text-xl font-black">Nova mensagem</h2>
+          <h2 className="text-xl font-black">Nova automação</h2>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <select
@@ -267,9 +329,9 @@ export default function MessagesPage() {
               onChange={(e) => changeType(e.target.value as "campaign" | "ai")}
               className="input"
             >
-              <option value="campaign">Disparo / Campanha</option>
+              <option value="campaign">Mensagem de campanha / disparo</option>
               <option value="ai">
-                Resposta automática / Chatbot {canUseChatbot ? "" : "🔒"}
+                Resposta automática no WhatsApp {canUseChatbot ? "" : "🔒"}
               </option>
             </select>
 
@@ -293,21 +355,29 @@ export default function MessagesPage() {
 
             {isCustomTrigger && (
               <>
-                <textarea
-                  value={triggerKeywords}
-                  onChange={(e) => setTriggerKeywords(e.target.value)}
-                  placeholder={`Gatilhos do cliente, um por linha.\nEx:\nsim\nquero\nquero simular\ntenho interesse`}
-                  className="input min-h-32 md:col-span-2"
-                />
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-black">
+                    O que o cliente pode escrever
+                  </label>
+                  <textarea
+                    value={triggerKeywords}
+                    onChange={(e) => setTriggerKeywords(e.target.value)}
+                    placeholder={`Digite uma opção por linha.\nEx:\nquero simular\nsimular fgts\ntenho interesse\nqual o valor\nquero catálogo`}
+                    className="input min-h-32"
+                  />
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Se o cliente enviar qualquer uma dessas frases, o robô envia a resposta configurada abaixo.
+                  </p>
+                </div>
 
                 <select
                   value={matchType}
                   onChange={(e) => setMatchType(e.target.value)}
                   className="input"
                 >
-                  <option value="contains">Contém a palavra/frase</option>
-                  <option value="exact">Texto exato</option>
-                  <option value="starts_with">Começa com</option>
+                  <option value="contains">Palavra em qualquer lugar da mensagem</option>
+                  <option value="exact">Mensagem igual exatamente</option>
+                  <option value="starts_with">Mensagem começa com</option>
                 </select>
 
                 <select
@@ -327,21 +397,41 @@ export default function MessagesPage() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Nome interno. Ex: Resposta FGTS - Quero simular"
+              placeholder="Nome da automação. Ex: Catálogo, Agendamento, Simulação FGTS"
               className="input md:col-span-2"
             />
 
-            <textarea
-              value={baseMessage}
-              onChange={(e) => setBaseMessage(e.target.value)}
-              placeholder="Mensagem do robô. Use variáveis: {nome}, {telefone}, {cardapio}"
-              className="input min-h-40 md:col-span-2"
-            />
+            <div className="md:col-span-2">
+              <label className="mb-2 block text-sm font-black">
+                Resposta automática enviada ao cliente
+              </label>
+
+              <textarea
+                ref={messageRef}
+                value={baseMessage}
+                onChange={(e) => setBaseMessage(e.target.value)}
+                placeholder="Ex: Olá {nome}, posso te ajudar. Me envie as informações para continuarmos."
+                className="input min-h-40"
+              />
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {VARIABLES.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => insertVariable("message", item.value)}
+                    className="rounded-xl border border-emerald-800 bg-emerald-950/30 px-3 py-2 text-xs font-black text-emerald-200 hover:bg-emerald-900"
+                  >
+                    + {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-black p-4 md:col-span-2">
               <p className="text-sm font-black">Mídia opcional</p>
               <p className="mt-1 text-xs text-zinc-500">
-                Você pode anexar áudio, imagem, PDF ou vídeo junto com o texto.
+                Anexe áudio, imagem, PDF ou vídeo para enviar junto com a resposta.
               </p>
 
               <input
@@ -378,6 +468,53 @@ export default function MessagesPage() {
                 </div>
               )}
             </div>
+
+            <div className="rounded-2xl border border-blue-900 bg-blue-950/20 p-4 md:col-span-2">
+              <label className="flex items-center gap-3 text-sm font-black">
+                <input
+                  type="checkbox"
+                  checked={notifyEnabled}
+                  onChange={(e) => setNotifyEnabled(e.target.checked)}
+                />
+                Avisar alguém da equipe quando essa automação disparar
+              </label>
+
+              <p className="mt-2 text-xs text-zinc-400">
+                Use isso para mandar um alerta interno para outro WhatsApp, como vendedor, atendente, gerente ou cozinha.
+              </p>
+
+              {notifyEnabled && (
+                <div className="mt-4 grid gap-3">
+                  <input
+                    value={notifyNumber}
+                    onChange={(e) => setNotifyNumber(e.target.value)}
+                    placeholder="WhatsApp da equipe. Ex: 5511999999999"
+                    className="input"
+                  />
+
+                  <textarea
+                    ref={notifyRef}
+                    value={notifyMessage}
+                    onChange={(e) => setNotifyMessage(e.target.value)}
+                    placeholder="Mensagem que a equipe vai receber"
+                    className="input min-h-36"
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    {VARIABLES.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={() => insertVariable("notify", item.value)}
+                        className="rounded-xl border border-blue-800 bg-blue-950/40 px-3 py-2 text-xs font-black text-blue-200 hover:bg-blue-900"
+                      >
+                        + {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <button
@@ -385,7 +522,7 @@ export default function MessagesPage() {
             disabled={loading || uploading}
             className="mt-4 w-full rounded-2xl bg-emerald-600 px-5 py-4 text-sm font-black hover:bg-emerald-700 disabled:opacity-50 md:w-auto"
           >
-            {loading ? "Salvando..." : "Salvar mensagem"}
+            {loading ? "Salvando..." : "Salvar automação"}
           </button>
         </section>
 
@@ -399,7 +536,7 @@ export default function MessagesPage() {
                 <div>
                   <h3 className="text-lg font-black">{item.name}</h3>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {item.type === "campaign" ? "Disparo" : "Chatbot"} ·{" "}
+                    {item.type === "campaign" ? "Campanha" : "Chatbot"} ·{" "}
                     {item.intent} · {item.active ? "Ativa" : "Inativa"}
                   </p>
                 </div>
@@ -423,7 +560,7 @@ export default function MessagesPage() {
 
               {item.trigger_keywords?.length > 0 && (
                 <div className="mt-4 rounded-2xl bg-emerald-950/30 p-4 text-sm text-emerald-200">
-                  <strong>Gatilhos:</strong>
+                  <strong>Cliente pode escrever:</strong>
                   <pre className="mt-2 whitespace-pre-wrap text-xs">
                     {formatTriggers(item.trigger_keywords)}
                   </pre>
@@ -433,6 +570,19 @@ export default function MessagesPage() {
               <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-black p-4 text-sm text-zinc-300">
                 {item.base_message}
               </div>
+
+              {item.notify_enabled && (
+                <div className="mt-4 rounded-2xl border border-blue-900 bg-blue-950/20 p-4 text-sm text-blue-200">
+                  <p>
+                    <strong>Avisa equipe:</strong> {item.notify_number}
+                  </p>
+                  {item.notify_message && (
+                    <pre className="mt-2 whitespace-pre-wrap text-xs text-blue-100">
+                      {item.notify_message}
+                    </pre>
+                  )}
+                </div>
+              )}
 
               {item.media_url && (
                 <div className="mt-4 rounded-2xl border border-zinc-800 bg-black p-4 text-sm text-zinc-300">
@@ -451,7 +601,7 @@ export default function MessagesPage() {
 
               {item.kanban_status && (
                 <p className="mt-3 text-xs text-zinc-500">
-                  Move lead para: <strong>{item.kanban_status}</strong>
+                  Move cliente para: <strong>{item.kanban_status}</strong>
                 </p>
               )}
             </article>

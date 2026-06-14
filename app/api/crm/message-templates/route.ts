@@ -26,6 +26,14 @@ function normalizeTriggers(value: any): string[] {
     .filter(Boolean);
 }
 
+function cleanPhone(value: any) {
+  const phone = String(value || "").replace(/\D/g, "");
+  if (!phone) return null;
+  if (phone.startsWith("55")) return phone;
+  if (phone.length === 10 || phone.length === 11) return `55${phone}`;
+  return phone;
+}
+
 function autoVariations(text: string, type: string, intent: string) {
   const clean = String(text || "").trim();
 
@@ -96,9 +104,20 @@ export async function POST(req: NextRequest) {
       ? String(body.kanban_status).trim()
       : null;
 
+    const notifyEnabled = Boolean(body.notify_enabled);
+    const notifyNumber = cleanPhone(body.notify_number);
+    const notifyMessage = String(body.notify_message || "").trim();
+
     if (!name || !baseMessage) {
       return NextResponse.json(
         { error: "Nome e mensagem são obrigatórios" },
+        { status: 400 }
+      );
+    }
+
+    if (notifyEnabled && !notifyNumber) {
+      return NextResponse.json(
+        { error: "Informe o número que receberá a notificação interna." },
         { status: 400 }
       );
     }
@@ -117,6 +136,9 @@ export async function POST(req: NextRequest) {
         media_url: mediaUrl,
         media_type: mediaType,
         kanban_status: kanbanStatus,
+        notify_enabled: notifyEnabled,
+        notify_number: notifyNumber,
+        notify_message: notifyMessage || null,
         active: true,
       })
       .select()
@@ -205,6 +227,18 @@ export async function PATCH(req: NextRequest) {
       updatePayload.kanban_status = body.kanban_status
         ? String(body.kanban_status).trim()
         : null;
+    }
+
+    if (body.notify_enabled !== undefined) {
+      updatePayload.notify_enabled = Boolean(body.notify_enabled);
+    }
+
+    if (body.notify_number !== undefined) {
+      updatePayload.notify_number = cleanPhone(body.notify_number);
+    }
+
+    if (body.notify_message !== undefined) {
+      updatePayload.notify_message = String(body.notify_message || "").trim() || null;
     }
 
     const { error } = await supabase

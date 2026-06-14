@@ -109,10 +109,16 @@ function buildSendSession(companyId: string, sessionId: number | string) {
   return `${companyId}_${sessionId}`;
 }
 
-function applyVariables(text: string, lead: any) {
+function applyVariables(text: string, lead: any, extra: any = {}) {
+  const phone = lead?.phone || extra?.phone || "";
+  const lastMessage = extra?.lastMessage || extra?.ultimaMensagem || "";
+  const linkWhatsapp = phone ? `https://wa.me/${clean(phone)}` : "";
+
   return String(text || "")
     .replaceAll("{nome}", lead?.name || "tudo bem")
-    .replaceAll("{telefone}", lead?.phone || "")
+    .replaceAll("{telefone}", phone)
+    .replaceAll("{ultima_mensagem}", lastMessage)
+    .replaceAll("{link_whatsapp}", linkWhatsapp)
     .replaceAll("{cardapio}", CARDAPIO_URL)
     .trim();
 }
@@ -121,7 +127,8 @@ async function getTemplateReply(
   supabase: any,
   intent: string,
   lead: any,
-  companyId: string
+  companyId: string,
+  extra: any = {}
 ) {
   const { data: template } = await supabase
     .from("message_templates")
@@ -146,7 +153,11 @@ async function getTemplateReply(
     ? variations.map((v: any) => v.content)
     : [template.base_message];
 
-  return applyVariables(list[Math.floor(Math.random() * list.length)], lead);
+  return applyVariables(
+    list[Math.floor(Math.random() * list.length)],
+    lead,
+    extra
+  );
 }
 
 async function getCustomTemplate(
@@ -158,7 +169,7 @@ async function getCustomTemplate(
   const { data: templates, error } = await supabase
     .from("message_templates")
     .select(
-      "id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status"
+      "id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status, notify_enabled, notify_number, notify_message"
     )
     .eq("company_id", companyId)
     .eq("type", "ai")
@@ -184,10 +195,15 @@ async function getCustomTemplate(
       return {
         id: template.id,
         name: template.name,
-        reply: applyVariables(template.base_message || "", lead),
+        reply: applyVariables(template.base_message || "", lead, {
+          lastMessage: message,
+        }),
         mediaUrl: template.media_url || null,
         mediaType: template.media_type || "text",
         kanbanStatus: template.kanban_status || null,
+        notifyEnabled: Boolean(template.notify_enabled),
+        notifyNumber: template.notify_number || null,
+        notifyMessage: template.notify_message || null,
       };
     }
   }
@@ -253,6 +269,31 @@ async function sendMedia({
     isLid,
     message: caption ? `${caption}\n\n${mediaUrl}` : mediaUrl,
   });
+}
+
+async function sendInternalNotification({
+  sessionId,
+  number,
+  message,
+}: {
+  sessionId: string;
+  number: string;
+  message: string;
+}) {
+  if (!number || !message) return null;
+
+  try {
+    return await sendMessage({
+      sessionId,
+      number: normalizePhone(number),
+      message,
+      lid: null,
+      isLid: false,
+    });
+  } catch (error) {
+    console.error("ERRO AO ENVIAR NOTIFICAÇÃO INTERNA:", error);
+    return null;
+  }
 }
 
 function isNoInterest(text: string) {
@@ -450,18 +491,31 @@ async function getFinalReply(
       mediaUrl: customTemplate.mediaUrl,
       mediaType: customTemplate.mediaType,
       kanbanStatus: customTemplate.kanbanStatus,
+      notifyEnabled: customTemplate.notifyEnabled,
+      notifyNumber: customTemplate.notifyNumber,
+      notifyMessage: customTemplate.notifyMessage,
       source: "custom_trigger",
       templateId: customTemplate.id,
     };
   }
 
-  const templateReply = await getTemplateReply(supabase, intent, lead, companyId);
+  const templateReply = await getTemplateReply(
+    supabase,
+    intent,
+    lead,
+    companyId,
+    { lastMessage: message }
+  );
+
   if (templateReply) {
     return {
       reply: templateReply,
       mediaUrl: null,
       mediaType: "text",
       kanbanStatus: null,
+      notifyEnabled: false,
+      notifyNumber: null,
+      notifyMessage: null,
       source: "intent_template",
     };
   }
@@ -470,7 +524,8 @@ async function getFinalReply(
     supabase,
     "DEFAULT",
     lead,
-    companyId
+    companyId,
+    { lastMessage: message }
   );
 
   if (defaultTemplate) {
@@ -479,6 +534,9 @@ async function getFinalReply(
       mediaUrl: null,
       mediaType: "text",
       kanbanStatus: null,
+      notifyEnabled: false,
+      notifyNumber: null,
+      notifyMessage: null,
       source: "default_template",
     };
   }
@@ -488,6 +546,9 @@ async function getFinalReply(
     mediaUrl: null,
     mediaType: "text",
     kanbanStatus: null,
+    notifyEnabled: false,
+    notifyNumber: null,
+    notifyMessage: null,
     source: "ai",
   };
 }
@@ -661,8 +722,9 @@ export async function POST(req: Request) {
 
     if (intent === "SEM_INTERESSE") {
       const reply =
-        (await getTemplateReply(supabase, "SEM_INTERESSE", lead, companyId)) ||
-        "Tudo bem! 😊 Se quiser falar depois, é só chamar.";
+        (await getTemplateReply(supabase, "SEM_INTERESSE", lead, companyId, {
+          lastMessage: message,
+        })) || "Tudo bem! 😊 Se quiser falar depois, é só chamar.";
 
       await replyAndSave({
         supabase,
@@ -709,6 +771,24 @@ export async function POST(req: Request) {
       mediaType: finalReply.mediaType,
     });
 
+    if (finalReply.notifyEnabled && finalReply.notifyNumber) {
+      const internalMessage = applyVariables(
+        finalReply.notifyMessage ||
+          "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
+        lead,
+        {
+          phone: lead.phone || phone,
+          lastMessage: message,
+        }
+      );
+
+      await sendInternalNotification({
+        sessionId: sendSessionId,
+        number: finalReply.notifyNumber,
+        message: internalMessage,
+      });
+    }
+
     const fallbackStatus =
       intent === "PEDIDO"
         ? "pedido"
@@ -741,6 +821,7 @@ export async function POST(req: Request) {
       session_id: sessionId,
       send_session_id: sendSessionId,
       kanban_status: nextStatus,
+      notify_sent: Boolean(finalReply.notifyEnabled && finalReply.notifyNumber),
     });
   } catch (error: any) {
     console.error("ERRO API WHATSAPP INCOMING:", error);
