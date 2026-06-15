@@ -161,6 +161,38 @@ async function countSentToday(sessionId: number, companyId: string) {
   return count || 0;
 }
 
+async function getBestSession(companyId: string) {
+  const available: { sessionId: number; sentToday: number }[] = [];
+
+  for (const sessionId of SESSIONS) {
+    const online = await isSessionOnline(sessionId, companyId);
+    if (!online) continue;
+
+    const sentToday = await countSentToday(sessionId, companyId);
+    if (sentToday >= MAX_PER_DAY) continue;
+
+    available.push({ sessionId, sentToday });
+  }
+
+  if (!available.length) {
+    throw new Error("Nenhum WhatsApp online disponível para disparo");
+  }
+
+  available.sort((a, b) => a.sentToday - b.sentToday);
+
+  return available[0].sessionId;
+}
+
+async function resolveSession(item: any, lead: any) {
+  const requestedSession = Number(item.session_id || 0);
+
+  if (requestedSession > 0) {
+    return requestedSession;
+  }
+
+  return await getBestSession(item.company_id);
+}
+
 async function sendText(
   sessionId: number,
   companyId: string,
@@ -190,6 +222,20 @@ async function sendText(
   }
 
   return data;
+}
+
+async function markLeadFailed(item: any, errorMessage: string) {
+  if (!item.lead_id) return;
+
+  await supabase
+    .from("leads")
+    .update({
+      campaign_status: "failed",
+      campaign_error: errorMessage,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", item.lead_id)
+    .eq("company_id", item.company_id);
 }
 
 async function processQueue() {
@@ -249,7 +295,7 @@ async function processQueue() {
       return;
     }
 
-    const sessionId = Number(item.session_id || lead?.session_id || 1);
+    const sessionId = await resolveSession(item, lead);
     const phone = cleanPhone(item.phone || lead?.phone || "");
     const intent = String(item.intent || item.type || "OPENING").toUpperCase();
     const finalSession = buildSessionId(item.company_id, sessionId);
@@ -292,11 +338,11 @@ async function processQueue() {
     }
 
     const templateMessage = await getTemplateMessage({
-  type: "campaign",
-  intent,
-  lead,
-  companyId: item.company_id,
-});
+      type: "campaign",
+      intent,
+      lead,
+      companyId: item.company_id,
+    });
 
     const message =
       templateMessage ||
@@ -305,6 +351,30 @@ async function processQueue() {
 
     if (!message) {
       throw new Error("Mensagem vazia");
+    }
+
+    await supabase
+      .from("automation_queue")
+      .update({
+        session_id: sessionId,
+        status: "processing",
+        attempts: Number(item.attempts || 0) + 1,
+        error: null,
+      })
+      .eq("id", item.id)
+      .eq("company_id", item.company_id);
+
+    if (lead?.id) {
+      await supabase
+        .from("leads")
+        .update({
+          campaign_status: "processing",
+          campaign_error: null,
+          session_id: sessionId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", lead.id)
+        .eq("company_id", item.company_id);
     }
 
     console.log(
@@ -316,6 +386,7 @@ async function processQueue() {
     await supabase
       .from("automation_queue")
       .update({
+        session_id: sessionId,
         status: "sent",
         sent_at: new Date().toISOString(),
         error: null,
@@ -339,6 +410,10 @@ async function processQueue() {
         .from("leads")
         .update({
           status: nextStatus,
+          campaign_status: "sent",
+          campaign_sent_at: new Date().toISOString(),
+          campaign_error: null,
+          session_id: sessionId,
           last_message: message,
           last_message_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -346,14 +421,14 @@ async function processQueue() {
         .eq("id", lead.id)
         .eq("company_id", item.company_id);
 
-     await supabase.from("messages").insert({
-  company_id: item.company_id,
-  branch_id: item.branch_id || null,
-  lead_id: lead.id,
-  direction: "sent",
-  content: message,
-  created_at: new Date().toISOString(),
-});
+      await supabase.from("messages").insert({
+        company_id: item.company_id,
+        branch_id: item.branch_id || null,
+        lead_id: lead.id,
+        direction: "sent",
+        content: message,
+        created_at: new Date().toISOString(),
+      });
     }
 
     console.log("Enviado com sucesso:", phone);
@@ -372,6 +447,8 @@ async function processQueue() {
         error: error.message,
       })
       .eq("id", item.id);
+
+    await markLeadFailed(item, error.message);
   }
 }
 

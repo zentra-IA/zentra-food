@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const leadId = String(body?.lead_id || "").trim();
     const intent = String(body?.intent || "OPENING").trim();
-    const sessionId = Number(body?.session_id || 1);
+   const sessionId = Number(body?.session_id || 0);
 
     if (!leadId) {
       return NextResponse.json(
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         branch_id: branchId || null,
         lead_id: lead.id,
         phone: lead.phone,
-        session_id: Number.isNaN(sessionId) ? 1 : sessionId,
+        session_id: Number.isNaN(sessionId) ? 0 : sessionId,
         type: "campaign",
         intent,
         status: "pending",
