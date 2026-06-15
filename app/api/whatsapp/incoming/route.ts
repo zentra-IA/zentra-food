@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +12,6 @@ function getSupabase() {
   }
 
   return createClient(supabaseUrl, serviceRoleKey);
-}
-
-function getOpenAI() {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_SUPPORT_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({ apiKey });
 }
 
 const WHATSAPP_SERVER =
@@ -111,11 +104,11 @@ function buildSendSession(companyId: string, sessionId: number | string) {
 
 function applyVariables(text: string, lead: any, extra: any = {}) {
   const phone = lead?.phone || extra?.phone || "";
-  const lastMessage = extra?.lastMessage || extra?.ultimaMensagem || "";
+  const lastMessage = extra?.lastMessage || "";
   const linkWhatsapp = phone ? `https://wa.me/${clean(phone)}` : "";
 
   return String(text || "")
-    .replaceAll("{nome}", lead?.name || "tudo bem")
+    .replaceAll("{nome}", lead?.name || "")
     .replaceAll("{telefone}", phone)
     .replaceAll("{ultima_mensagem}", lastMessage)
     .replaceAll("{link_whatsapp}", linkWhatsapp)
@@ -149,15 +142,19 @@ async function getTemplateReply(
     .eq("template_id", template.id)
     .eq("active", true);
 
-  const list = variations?.length
-    ? variations.map((v: any) => v.content)
-    : [template.base_message];
+  const options = [
+    template.base_message,
+    ...(variations?.map((v: any) => v.content) || []),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index);
 
-  return applyVariables(
-    list[Math.floor(Math.random() * list.length)],
-    lead,
-    extra
-  );
+  if (!options.length) return null;
+
+  const selected = options[Math.floor(Math.random() * options.length)];
+
+  return applyVariables(selected, lead, extra);
 }
 
 async function getCustomTemplate(
@@ -204,6 +201,7 @@ async function getCustomTemplate(
         notifyEnabled: Boolean(template.notify_enabled),
         notifyNumber: template.notify_number || null,
         notifyMessage: template.notify_message || null,
+        source: "custom_trigger",
       };
     }
   }
@@ -297,15 +295,12 @@ async function sendInternalNotification({
 }
 
 function isNoInterest(text: string) {
-  const t = text.toLowerCase().trim();
+  const t = normalizeText(text);
 
   return (
-    t.includes("não quero") ||
     t.includes("nao quero") ||
     t.includes("sem interesse") ||
-    t.includes("não tenho interesse") ||
     t.includes("nao tenho interesse") ||
-    t.includes("agora não") ||
     t.includes("agora nao") ||
     t.includes("pare") ||
     t.includes("sair") ||
@@ -314,36 +309,64 @@ function isNoInterest(text: string) {
 }
 
 function detectIntent(text: string) {
-  const t = text.toLowerCase().trim();
+  const t = normalizeText(text);
 
   if (isNoInterest(t)) return "SEM_INTERESSE";
-  if (t.includes("cardápio") || t.includes("cardapio") || t.includes("menu"))
-    return "CARDAPIO";
+  if (t.includes("cardapio") || t.includes("menu")) return "CARDAPIO";
   if (t.includes("promo") || t.includes("combo") || t.includes("desconto"))
     return "PROMOCAO";
   if (
     t.includes("pedido") ||
     t.includes("comprar") ||
     t.includes("quero pedir") ||
-    t.includes("preço") ||
     t.includes("preco") ||
     t.includes("valor")
   )
     return "PEDIDO";
   if (t.includes("entrega") || t.includes("delivery") || t.includes("frete"))
     return "ENTREGA";
-  if (t.includes("pix") || t.includes("cartão") || t.includes("pagamento"))
+  if (t.includes("pix") || t.includes("cartao") || t.includes("pagamento"))
     return "PAGAMENTO";
-  if (t.includes("horário") || t.includes("horario") || t.includes("funciona"))
-    return "HORARIO";
+  if (t.includes("horario") || t.includes("funciona")) return "HORARIO";
 
   return "DEFAULT";
+}
+
+function getIncomingMessageId(body: any) {
+  return (
+    body.messageId ||
+    body.message_id ||
+    body.key?.id ||
+    body.id ||
+    body.message?.key?.id ||
+    null
+  );
+}
+
+async function wasMessageAlreadyProcessed(
+  supabase: any,
+  leadId: string,
+  messageId: string | null
+) {
+  if (!messageId) return false;
+
+  const { data } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("lead_id", leadId)
+    .eq("event", "message_received")
+    .contains("payload", { message_id: messageId })
+    .limit(1)
+    .maybeSingle();
+
+  return Boolean(data?.id);
 }
 
 async function saveReceivedMessage(
   supabase: any,
   leadId: string,
-  message: string
+  message: string,
+  messageId?: string | null
 ) {
   const receivedInsert = await supabase.from("messages").insert({
     lead_id: leadId,
@@ -352,7 +375,9 @@ async function saveReceivedMessage(
     extension: "text",
     content: message,
     event: "message_received",
-    payload: {},
+    payload: {
+      message_id: messageId || null,
+    },
     created_at: new Date().toISOString(),
   });
 
@@ -423,52 +448,16 @@ async function replyAndSave({
   }
 
   if (result?.success !== false) {
-    await saveSentMessage(supabase, leadId, reply || mediaUrl, mediaUrl, mediaType);
+    await saveSentMessage(
+      supabase,
+      leadId,
+      reply || mediaUrl,
+      mediaUrl,
+      mediaType
+    );
   }
 
   return result;
-}
-
-async function generateAIReply(message: string, lead: any) {
-  try {
-    const openai = getOpenAI();
-
-    if (!openai) {
-      return `Oi! 😄 Posso te ajudar com cardápio, combos, promoções, entrega ou pagamento.
-
-Cardápio:
-${CARDAPIO_URL}`;
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.4,
-      messages: [
-        {
-          role: "system",
-          content: `
-Você é um atendente virtual.
-Responda em português brasileiro.
-Seja curto, simpático e objetivo.
-Não invente preços.
-Quando não souber, responda de forma educada e ofereça ajuda.
-Link do cardápio, se fizer sentido: ${CARDAPIO_URL}
-          `.trim(),
-        },
-        {
-          role: "user",
-          content: `Cliente: ${lead?.name || "Cliente"}\nMensagem: ${message}`,
-        },
-      ],
-    });
-
-    return (
-      completion.choices[0]?.message?.content?.trim() ||
-      `Oi! 😄 Posso te ajudar. Me diga o que você precisa.`
-    );
-  } catch {
-    return `Oi! 😄 Posso te ajudar. Me diga o que você precisa.`;
-  }
 }
 
 async function getFinalReply(
@@ -486,17 +475,7 @@ async function getFinalReply(
   );
 
   if (customTemplate?.reply || customTemplate?.mediaUrl) {
-    return {
-      reply: customTemplate.reply,
-      mediaUrl: customTemplate.mediaUrl,
-      mediaType: customTemplate.mediaType,
-      kanbanStatus: customTemplate.kanbanStatus,
-      notifyEnabled: customTemplate.notifyEnabled,
-      notifyNumber: customTemplate.notifyNumber,
-      notifyMessage: customTemplate.notifyMessage,
-      source: "custom_trigger",
-      templateId: customTemplate.id,
-    };
+    return customTemplate;
   }
 
   const templateReply = await getTemplateReply(
@@ -520,36 +499,15 @@ async function getFinalReply(
     };
   }
 
-  const defaultTemplate = await getTemplateReply(
-    supabase,
-    "DEFAULT",
-    lead,
-    companyId,
-    { lastMessage: message }
-  );
-
-  if (defaultTemplate) {
-    return {
-      reply: defaultTemplate,
-      mediaUrl: null,
-      mediaType: "text",
-      kanbanStatus: null,
-      notifyEnabled: false,
-      notifyNumber: null,
-      notifyMessage: null,
-      source: "default_template",
-    };
-  }
-
   return {
-    reply: await generateAIReply(message, lead),
+    reply: null,
     mediaUrl: null,
     mediaType: "text",
     kanbanStatus: null,
     notifyEnabled: false,
     notifyNumber: null,
     notifyMessage: null,
-    source: "ai",
+    source: "no_template",
   };
 }
 
@@ -557,6 +515,8 @@ export async function POST(req: Request) {
   try {
     const supabase = getSupabase();
     const body = await req.json();
+
+    const messageId = getIncomingMessageId(body);
 
     const rawPhone = clean(body.phone || "");
     const rawNumber = clean(body.number || "");
@@ -692,7 +652,20 @@ export async function POST(req: Request) {
       );
     }
 
-    await saveReceivedMessage(supabase, lead.id, message);
+    const duplicated = await wasMessageAlreadyProcessed(
+      supabase,
+      lead.id,
+      messageId
+    );
+
+    if (duplicated) {
+      return NextResponse.json({
+        success: true,
+        action: "duplicate_ignored",
+      });
+    }
+
+    await saveReceivedMessage(supabase, lead.id, message, messageId);
 
     await supabase
       .from("leads")
@@ -721,10 +694,32 @@ export async function POST(req: Request) {
     const intent = detectIntent(message);
 
     if (intent === "SEM_INTERESSE") {
-      const reply =
-        (await getTemplateReply(supabase, "SEM_INTERESSE", lead, companyId, {
-          lastMessage: message,
-        })) || "Tudo bem! 😊 Se quiser falar depois, é só chamar.";
+      const reply = await getTemplateReply(
+        supabase,
+        "SEM_INTERESSE",
+        lead,
+        companyId,
+        { lastMessage: message }
+      );
+
+      if (!reply) {
+        await supabase
+          .from("leads")
+          .update({
+            status: "sem_interesse",
+            ai_paused: true,
+            last_message: message,
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", lead.id)
+          .eq("company_id", companyId);
+
+        return NextResponse.json({
+          success: true,
+          action: "sem_interesse_sem_template",
+        });
+      }
 
       await replyAndSave({
         supabase,
@@ -758,6 +753,15 @@ export async function POST(req: Request) {
       lead,
       companyId
     );
+
+    if (!finalReply.reply && !finalReply.mediaUrl) {
+      return NextResponse.json({
+        success: true,
+        action: "no_template_found",
+        intent,
+        source: finalReply.source,
+      });
+    }
 
     await replyAndSave({
       supabase,
@@ -811,7 +815,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      action: "resposta_template_ia",
+      action: "resposta_template_configurado",
       intent,
       source: finalReply.source,
       lead_id: lead.id,
