@@ -59,7 +59,7 @@ async function getTemplateMessage({
   lead: any;
   companyId: string;
 }) {
-  const { data: template } = await supabase
+  const { data: template, error } = await supabase
     .from("message_templates")
     .select("id, base_message")
     .eq("company_id", companyId)
@@ -70,55 +70,36 @@ async function getTemplateMessage({
     .limit(1)
     .maybeSingle();
 
+  if (error) {
+    throw new Error(`Erro ao buscar template: ${error.message}`);
+  }
+
   if (!template) return null;
 
-  const { data: variations } = await supabase
+  const { data: variations, error: variationError } = await supabase
     .from("message_variations")
     .select("content")
     .eq("company_id", companyId)
     .eq("template_id", template.id)
     .eq("active", true);
 
-  const list = variations?.length
-    ? variations.map((v) => v.content)
-    : [template.base_message];
-
-  return applyVariables(list[Math.floor(Math.random() * list.length)], lead);
-}
-
-async function getFallbackMessage(intent: string, lead: any) {
-  const firstName = lead?.name || "";
-
-  if (intent === "FOLLOW_UP") {
-    return `Oi ${firstName}, passando rapidinho 😊
-
-Você conseguiu ver minha mensagem anterior?
-Posso te enviar o cardápio?`;
+  if (variationError) {
+    throw new Error(`Erro ao buscar variações: ${variationError.message}`);
   }
 
-  if (intent === "REATIVACAO") {
-    return `Oi ${firstName}, tudo bem?
+  const options = [
+    template.base_message,
+    ...(variations?.map((item: any) => item.content) || []),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index);
 
-Faz um tempinho que você não pede com a gente.
-Hoje temos opções especiais no delivery.`;
-  }
+  if (!options.length) return null;
 
-  if (intent === "POS_VENDA") {
-    return `Oi ${firstName}, tudo certo?
+  const selected = options[Math.floor(Math.random() * options.length)];
 
-Seu pedido chegou certinho? 😊`;
-  }
-
-  if (intent === "RECUPERACAO") {
-    return `Oi ${firstName}, vi que você começou um pedido.
-
-Posso te ajudar a finalizar?`;
-  }
-
-  return `Oi ${firstName}, tudo bem?
-
-Temos uma condição especial hoje.
-Quer ver o cardápio?`;
+  return applyVariables(selected, lead);
 }
 
 async function isSessionOnline(sessionId: number, companyId: string) {
@@ -150,13 +131,18 @@ async function countSentToday(sessionId: number, companyId: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const { count } = await supabase
+  const { count, error } = await supabase
     .from("automation_queue")
     .select("*", { count: "exact", head: true })
     .eq("company_id", companyId)
     .eq("session_id", sessionId)
     .eq("status", "sent")
     .gte("sent_at", today.toISOString());
+
+  if (error) {
+    console.log("Erro ao contar envios do dia:", error.message);
+    return 0;
+  }
 
   return count || 0;
 }
@@ -183,7 +169,7 @@ async function getBestSession(companyId: string) {
   return available[0].sessionId;
 }
 
-async function resolveSession(item: any, lead: any) {
+async function resolveSession(item: any) {
   const requestedSession = Number(item.session_id || 0);
 
   if (requestedSession > 0) {
@@ -224,6 +210,21 @@ async function sendText(
   return data;
 }
 
+async function markLeadProcessing(item: any, sessionId: number) {
+  if (!item.lead_id) return;
+
+  await supabase
+    .from("leads")
+    .update({
+      campaign_status: "processing",
+      campaign_error: null,
+      session_id: sessionId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", item.lead_id)
+    .eq("company_id", item.company_id);
+}
+
 async function markLeadFailed(item: any, errorMessage: string) {
   if (!item.lead_id) return;
 
@@ -236,6 +237,57 @@ async function markLeadFailed(item: any, errorMessage: string) {
     })
     .eq("id", item.lead_id)
     .eq("company_id", item.company_id);
+}
+
+async function markLeadSent({
+  item,
+  lead,
+  intent,
+  sessionId,
+  message,
+}: {
+  item: any;
+  lead: any;
+  intent: string;
+  sessionId: number;
+  message: string;
+}) {
+  if (!lead?.id) return;
+
+  const nextStatus =
+    intent === "FOLLOW_UP"
+      ? "campanha"
+      : intent === "REATIVACAO"
+      ? "reativar_futuro"
+      : intent === "POS_VENDA"
+      ? "finalizado"
+      : intent === "RECUPERACAO"
+      ? "interesse"
+      : "enviado";
+
+  await supabase
+    .from("leads")
+    .update({
+      status: nextStatus,
+      campaign_status: "sent",
+      campaign_sent_at: new Date().toISOString(),
+      campaign_error: null,
+      session_id: sessionId,
+      last_message: message,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", lead.id)
+    .eq("company_id", item.company_id);
+
+  await supabase.from("messages").insert({
+    company_id: item.company_id,
+    branch_id: item.branch_id || null,
+    lead_id: lead.id,
+    direction: "sent",
+    content: message,
+    created_at: new Date().toISOString(),
+  });
 }
 
 async function processQueue() {
@@ -295,7 +347,7 @@ async function processQueue() {
       return;
     }
 
-    const sessionId = await resolveSession(item, lead);
+    const sessionId = await resolveSession(item);
     const phone = cleanPhone(item.phone || lead?.phone || "");
     const intent = String(item.intent || item.type || "OPENING").toUpperCase();
     const finalSession = buildSessionId(item.company_id, sessionId);
@@ -345,12 +397,10 @@ async function processQueue() {
     });
 
     const message =
-      templateMessage ||
-      applyVariables(String(item.message || ""), lead) ||
-      (await getFallbackMessage(intent, lead));
+      templateMessage || applyVariables(String(item.message || ""), lead);
 
-    if (!message) {
-      throw new Error("Mensagem vazia");
+    if (!message?.trim()) {
+      throw new Error(`Nenhum template ativo encontrado para ${intent}`);
     }
 
     await supabase
@@ -364,18 +414,7 @@ async function processQueue() {
       .eq("id", item.id)
       .eq("company_id", item.company_id);
 
-    if (lead?.id) {
-      await supabase
-        .from("leads")
-        .update({
-          campaign_status: "processing",
-          campaign_error: null,
-          session_id: sessionId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", lead.id)
-        .eq("company_id", item.company_id);
-    }
+    await markLeadProcessing(item, sessionId);
 
     console.log(
       `Enviando ${intent} para ${phone} pelo WhatsApp ${sessionId} (${finalSession}) | empresa ${item.company_id}`
@@ -394,42 +433,13 @@ async function processQueue() {
       .eq("id", item.id)
       .eq("company_id", item.company_id);
 
-    if (lead?.id) {
-      const nextStatus =
-        intent === "FOLLOW_UP"
-          ? "campanha"
-          : intent === "REATIVACAO"
-          ? "reativar_futuro"
-          : intent === "POS_VENDA"
-          ? "finalizado"
-          : intent === "RECUPERACAO"
-          ? "interesse"
-          : "enviado";
-
-      await supabase
-        .from("leads")
-        .update({
-          status: nextStatus,
-          campaign_status: "sent",
-          campaign_sent_at: new Date().toISOString(),
-          campaign_error: null,
-          session_id: sessionId,
-          last_message: message,
-          last_message_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", lead.id)
-        .eq("company_id", item.company_id);
-
-      await supabase.from("messages").insert({
-        company_id: item.company_id,
-        branch_id: item.branch_id || null,
-        lead_id: lead.id,
-        direction: "sent",
-        content: message,
-        created_at: new Date().toISOString(),
-      });
-    }
+    await markLeadSent({
+      item,
+      lead,
+      intent,
+      sessionId,
+      message,
+    });
 
     console.log("Enviado com sucesso:", phone);
 

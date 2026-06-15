@@ -59,6 +59,17 @@ function formatTriggers(value: any) {
   return "";
 }
 
+function formatVariations(value: any) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => item?.content || "")
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return "";
+}
+
 export default function MessagesPage() {
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
   const notifyRef = useRef<HTMLTextAreaElement | null>(null);
@@ -70,6 +81,7 @@ export default function MessagesPage() {
   const [name, setName] = useState("");
   const [intent, setIntent] = useState("OPENING");
   const [baseMessage, setBaseMessage] = useState("");
+  const [messageVariations, setMessageVariations] = useState("");
   const [triggerKeywords, setTriggerKeywords] = useState("");
   const [matchType, setMatchType] = useState("contains");
   const [kanbanStatus, setKanbanStatus] = useState("");
@@ -131,6 +143,7 @@ export default function MessagesPage() {
     setIntent("OPENING");
     setTriggerKeywords("");
     setKanbanStatus("");
+    setMessageVariations("");
   }
 
   function insertVariable(target: "message" | "notify", variable: string) {
@@ -200,7 +213,7 @@ export default function MessagesPage() {
     }
 
     if (!name.trim() || !baseMessage.trim()) {
-      alert("Preencha nome da automação e resposta automática.");
+      alert("Preencha nome da automação e mensagem principal.");
       return;
     }
 
@@ -226,6 +239,7 @@ export default function MessagesPage() {
           name,
           intent,
           base_message: baseMessage,
+          message_variations: messageVariations,
           trigger_keywords: triggerKeywords,
           match_type: matchType,
           media_url: mediaUrl || null,
@@ -246,6 +260,7 @@ export default function MessagesPage() {
 
       setName("");
       setBaseMessage("");
+      setMessageVariations("");
       setTriggerKeywords("");
       setMediaUrl("");
       setMediaType("text");
@@ -316,7 +331,7 @@ export default function MessagesPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Configure disparos, respostas automáticas, áudio, imagem, PDF, movimentação no Kanban e aviso interno para sua equipe.
+            Configure disparos, respostas automáticas, variações, áudio, imagem, PDF, Kanban e aviso interno.
           </p>
         </section>
 
@@ -397,21 +412,21 @@ export default function MessagesPage() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Nome da automação. Ex: Catálogo, Agendamento, Simulação FGTS"
+              placeholder="Nome da automação. Ex: Abertura FGTS, Catálogo, Pós-venda"
               className="input md:col-span-2"
             />
 
             <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-black">
-                Resposta automática enviada ao cliente
+                Mensagem principal
               </label>
 
               <textarea
                 ref={messageRef}
                 value={baseMessage}
                 onChange={(e) => setBaseMessage(e.target.value)}
-                placeholder="Ex: Olá {nome}, posso te ajudar. Me envie as informações para continuarmos."
-                className="input min-h-40"
+                placeholder="Ex: Olá {nome}, tudo bem? Posso te mandar uma informação rápida?"
+                className="input min-h-36"
               />
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -426,6 +441,23 @@ export default function MessagesPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="mb-2 block text-sm font-black">
+                Variações da mensagem
+              </label>
+
+              <textarea
+                value={messageVariations}
+                onChange={(e) => setMessageVariations(e.target.value)}
+                placeholder={`Digite uma variação por linha.\nEx:\nOi {nome}, tudo bem?\nOlá {nome}, tudo certo?\nOpa {nome}, posso te mandar uma informação?\nE aí {nome}, tudo tranquilo?\nOlá {nome}, tenho uma novidade rápida.`}
+                className="input min-h-40"
+              />
+
+              <p className="mt-2 text-xs text-zinc-500">
+                O sistema escolhe uma versão aleatória em cada disparo. Isso ajuda a evitar mensagens repetidas.
+              </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-black p-4 md:col-span-2">
@@ -570,6 +602,15 @@ export default function MessagesPage() {
               <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-black p-4 text-sm text-zinc-300">
                 {item.base_message}
               </div>
+
+              {item.message_variations?.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-emerald-900 bg-emerald-950/20 p-4 text-sm text-emerald-100">
+                  <strong>Variações:</strong>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs">
+                    {formatVariations(item.message_variations)}
+                  </pre>
+                </div>
+              )}
 
               {item.notify_enabled && (
                 <div className="mt-4 rounded-2xl border border-blue-900 bg-blue-950/20 p-4 text-sm text-blue-200">

@@ -15,7 +15,7 @@ function getSupabase() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
-function normalizeTriggers(value: any): string[] {
+function normalizeList(value: any): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => String(item || "").trim()).filter(Boolean);
   }
@@ -26,6 +26,10 @@ function normalizeTriggers(value: any): string[] {
     .filter(Boolean);
 }
 
+function normalizeTriggers(value: any): string[] {
+  return normalizeList(value);
+}
+
 function cleanPhone(value: any) {
   const phone = String(value || "").replace(/\D/g, "");
   if (!phone) return null;
@@ -34,33 +38,24 @@ function cleanPhone(value: any) {
   return phone;
 }
 
-function autoVariations(text: string, type: string, intent: string) {
+function autoVariations(text: string, intent: string) {
   const clean = String(text || "").trim();
-
   if (!clean) return [];
 
   if (intent === "PERSONALIDADE" || intent === "FAQ_CUSTOM") {
-    return [clean];
+    return [];
   }
 
-  if (type === "ai") {
-    return [
-      clean,
-      clean.replace("Oi", "Olá").replace("tudo bem?", "tudo certo?"),
-      clean.replace("Oi", "Opa").replace("posso", "consigo"),
-    ]
-      .filter(Boolean)
-      .filter((item, index, arr) => arr.indexOf(item) === index);
-  }
+  const variations = [
+    clean.replace(/^Oi/i, "Olá"),
+    clean.replace(/^Oi/i, "Opa"),
+    clean.replace(/^Oi/i, "E aí"),
+    clean.replace(/^Olá/i, "Oi"),
+    clean.replace(/^Olá/i, "Opa"),
+  ];
 
-  return [
-    clean,
-    clean.replace("Oi", "Olá").replace("tudo bem?", "tudo certo?"),
-    clean.replace("Oi", "Opa").replace("Quer", "Posso"),
-    clean.replace("Temos", "Hoje temos").replace("Quer", "Gostaria que eu"),
-  ]
-    .filter(Boolean)
-    .filter((item, index, arr) => arr.indexOf(item) === index);
+  return [...new Set(variations.map((v) => v.trim()).filter(Boolean))]
+    .filter((item) => item !== clean);
 }
 
 export async function GET(req: NextRequest) {
@@ -97,9 +92,12 @@ export async function POST(req: NextRequest) {
     const baseMessage = String(body.base_message || "").trim();
 
     const triggerKeywords = normalizeTriggers(body.trigger_keywords);
+    const manualVariations = normalizeList(body.message_variations);
     const matchType = String(body.match_type || "contains");
+
     const mediaUrl = body.media_url ? String(body.media_url).trim() : null;
     const mediaType = String(body.media_type || "text");
+
     const kanbanStatus = body.kanban_status
       ? String(body.kanban_status).trim()
       : null;
@@ -146,20 +144,26 @@ export async function POST(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    const variations = autoVariations(baseMessage, type, intent).map(
-      (content) => ({
-        company_id: companyId,
-        branch_id: branchId || null,
-        template_id: template.id,
-        content,
-        active: true,
-      })
-    );
+    const auto = autoVariations(baseMessage, intent);
 
-    if (variations.length) {
+    const allVariations = [...manualVariations, ...auto]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .filter((item) => item !== baseMessage)
+      .filter((item, index, arr) => arr.indexOf(item) === index);
+
+    if (allVariations.length) {
       const { error: variationError } = await supabase
         .from("message_variations")
-        .insert(variations);
+        .insert(
+          allVariations.map((content) => ({
+            company_id: companyId,
+            branch_id: branchId || null,
+            template_id: template.id,
+            content,
+            active: true,
+          }))
+        );
 
       if (variationError) throw new Error(variationError.message);
     }
@@ -176,7 +180,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const supabase = getSupabase();
-    const { companyId } = requireCompany(req);
+    const { companyId, branchId } = requireCompany(req);
     const body = await req.json();
 
     const id = String(body.id || "");
@@ -238,7 +242,8 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (body.notify_message !== undefined) {
-      updatePayload.notify_message = String(body.notify_message || "").trim() || null;
+      updatePayload.notify_message =
+        String(body.notify_message || "").trim() || null;
     }
 
     const { error } = await supabase
@@ -248,6 +253,32 @@ export async function PATCH(req: NextRequest) {
       .eq("company_id", companyId);
 
     if (error) throw new Error(error.message);
+
+    if (body.message_variations !== undefined) {
+      const manualVariations = normalizeList(body.message_variations);
+
+      await supabase
+        .from("message_variations")
+        .delete()
+        .eq("template_id", id)
+        .eq("company_id", companyId);
+
+      if (manualVariations.length) {
+        const { error: variationError } = await supabase
+          .from("message_variations")
+          .insert(
+            manualVariations.map((content) => ({
+              company_id: companyId,
+              branch_id: branchId || null,
+              template_id: id,
+              content,
+              active: true,
+            }))
+          );
+
+        if (variationError) throw new Error(variationError.message);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
