@@ -73,6 +73,10 @@ function formatVariations(value: any) {
   return "";
 }
 
+function flowModeLabel(value: any) {
+  return value === "sequence" ? "Fluxo em ordem" : "Resposta avulsa";
+}
+
 export default function MessagesPage() {
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
   const notifyRef = useRef<HTMLTextAreaElement | null>(null);
@@ -91,6 +95,10 @@ export default function MessagesPage() {
   const [kanbanStatus, setKanbanStatus] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
   const [mediaType, setMediaType] = useState("text");
+
+  const [flowMode, setFlowMode] = useState("global");
+  const [flowStep, setFlowStep] = useState("");
+  const [nextStep, setNextStep] = useState("");
 
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [notifyNumber, setNotifyNumber] = useState("");
@@ -147,6 +155,9 @@ export default function MessagesPage() {
     setKanbanStatus("");
     setMediaUrl("");
     setMediaType("text");
+    setFlowMode("global");
+    setFlowStep("");
+    setNextStep("");
     setNotifyEnabled(false);
     setNotifyNumber("");
     setNotifyMessage(DEFAULT_NOTIFY_MESSAGE);
@@ -163,6 +174,9 @@ export default function MessagesPage() {
     setTriggerKeywords("");
     setKanbanStatus("");
     setMessageVariations("");
+    setFlowMode("global");
+    setFlowStep("");
+    setNextStep("");
   }
 
   function insertVariable(target: "message" | "notify", variable: string) {
@@ -254,6 +268,9 @@ export default function MessagesPage() {
     setKanbanStatus(item.kanban_status || "");
     setMediaUrl(item.media_url || "");
     setMediaType(item.media_type || "text");
+    setFlowMode(item.flow_mode || "global");
+    setFlowStep(item.flow_step ? String(item.flow_step) : "");
+    setNextStep(item.next_step ? String(item.next_step) : "");
     setNotifyEnabled(Boolean(item.notify_enabled));
     setNotifyNumber(item.notify_number || "");
     setNotifyMessage(item.notify_message || DEFAULT_NOTIFY_MESSAGE);
@@ -277,6 +294,11 @@ export default function MessagesPage() {
 
     if (isCustomTrigger && !triggerKeywords.trim()) {
       alert("Preencha pelo menos uma frase que o cliente pode escrever.");
+      return;
+    }
+
+    if (isCustomTrigger && flowMode === "sequence" && !flowStep.trim()) {
+      alert("Informe a etapa atual do fluxo.");
       return;
     }
 
@@ -304,6 +326,9 @@ export default function MessagesPage() {
           media_url: mediaUrl || null,
           media_type: mediaUrl ? mediaType : "text",
           kanban_status: kanbanStatus || null,
+          flow_mode: isCustomTrigger ? flowMode : "global",
+          flow_step: isCustomTrigger && flowMode === "sequence" ? flowStep : null,
+          next_step: isCustomTrigger && flowMode === "sequence" ? nextStep || null : null,
           notify_enabled: notifyEnabled,
           notify_number: notifyNumber,
           notify_message: notifyMessage,
@@ -376,8 +401,8 @@ export default function MessagesPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Configure disparos, respostas automáticas, variações, áudio, imagem,
-            PDF, Kanban e aviso interno.
+            Configure disparos, respostas automáticas, fluxos em ordem,
+            respostas avulsas, variações, mídia, Kanban e aviso interno.
           </p>
         </section>
 
@@ -437,12 +462,62 @@ export default function MessagesPage() {
                   <textarea
                     value={triggerKeywords}
                     onChange={(e) => setTriggerKeywords(e.target.value)}
-                    placeholder={`Digite uma opção por linha.\nEx:\nquero simular\nsimular fgts\ntenho interesse\nqual o valor\nquero catálogo`}
+                    placeholder={`Digite uma opção por linha.\nEx:\nsim\nquero\ntenho interesse\nonde pegou meu contato`}
                     className="input min-h-32"
                   />
                   <p className="mt-2 text-xs text-zinc-500">
                     Se o cliente enviar qualquer uma dessas frases, o robô envia
                     a resposta configurada abaixo.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-900 bg-emerald-950/20 p-4 md:col-span-2">
+                  <label className="mb-2 block text-sm font-black">
+                    Tipo de resposta
+                  </label>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <select
+                      value={flowMode}
+                      onChange={(e) => {
+                        setFlowMode(e.target.value);
+                        if (e.target.value === "global") {
+                          setFlowStep("");
+                          setNextStep("");
+                        }
+                      }}
+                      className="input"
+                    >
+                      <option value="global">Resposta avulsa</option>
+                      <option value="sequence">Fluxo em ordem</option>
+                    </select>
+
+                    {flowMode === "sequence" && (
+                      <>
+                        <input
+                          type="number"
+                          min="1"
+                          value={flowStep}
+                          onChange={(e) => setFlowStep(e.target.value)}
+                          placeholder="Etapa atual. Ex: 1"
+                          className="input"
+                        />
+
+                        <input
+                          type="number"
+                          min="1"
+                          value={nextStep}
+                          onChange={(e) => setNextStep(e.target.value)}
+                          placeholder="Próxima etapa. Ex: 2"
+                          className="input"
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <p className="mt-2 text-xs text-zinc-400">
+                    Resposta avulsa funciona a qualquer momento. Fluxo em ordem
+                    só responde quando o lead estiver na etapa configurada.
                   </p>
                 </div>
 
@@ -475,7 +550,7 @@ export default function MessagesPage() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Nome da automação. Ex: Abertura FGTS, Catálogo, Pós-venda"
+              placeholder="Nome da automação. Ex: Etapa 1 - Interesse, Dúvida contato, Pós-venda"
               className="input md:col-span-2"
             />
 
@@ -514,21 +589,19 @@ export default function MessagesPage() {
               <textarea
                 value={messageVariations}
                 onChange={(e) => setMessageVariations(e.target.value)}
-                placeholder={`Digite uma variação por linha.\nEx:\nOi {nome}, tudo bem?\nOlá {nome}, tudo certo?\nOpa {nome}, posso te mandar uma informação?\nE aí {nome}, tudo tranquilo?\nOlá {nome}, tenho uma novidade rápida.`}
+                placeholder={`Digite uma variação por linha.\nEx:\nOi {nome}, tudo bem?\nOlá {nome}, tudo certo?\nOpa {nome}, posso te mandar uma informação?`}
                 className="input min-h-40"
               />
 
               <p className="mt-2 text-xs text-zinc-500">
-                O sistema escolhe uma versão aleatória em cada disparo. Isso
-                ajuda a evitar mensagens repetidas.
+                O sistema escolhe uma versão aleatória em cada disparo ou resposta.
               </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-black p-4 md:col-span-2">
               <p className="text-sm font-black">Mídia opcional</p>
               <p className="mt-1 text-xs text-zinc-500">
-                Anexe áudio, imagem, PDF ou vídeo para enviar junto com a
-                resposta.
+                Anexe áudio, imagem, PDF ou vídeo para enviar junto com a resposta.
               </p>
 
               <input
@@ -642,6 +715,16 @@ export default function MessagesPage() {
                   <p className="mt-1 text-sm text-zinc-500">
                     {item.type === "campaign" ? "Campanha" : "Chatbot"} ·{" "}
                     {item.intent} · {item.active ? "Ativa" : "Inativa"}
+                  </p>
+
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Tipo: <strong>{flowModeLabel(item.flow_mode)}</strong>
+                    {item.flow_mode === "sequence" && (
+                      <>
+                        {" "}· Etapa atual: <strong>{item.flow_step || 1}</strong>
+                        {" "}· Próxima etapa: <strong>{item.next_step || "não avança"}</strong>
+                      </>
+                    )}
                   </p>
                 </div>
 
