@@ -53,7 +53,6 @@ function keywordMatches(message: string, keyword: string, matchType = "contains"
   if (!key) return false;
   if (matchType === "exact") return text === key;
   if (matchType === "starts_with") return text.startsWith(key);
-
   return text.includes(key);
 }
 
@@ -116,6 +115,24 @@ function applyVariables(text: string, lead: any, extra: any = {}) {
     .trim();
 }
 
+function pickText(baseMessage: string, variations: any[], lead: any, extra: any) {
+  const options = [
+    baseMessage,
+    ...(variations?.map((v: any) => v.content) || []),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index);
+
+  if (!options.length) return "";
+
+  return applyVariables(
+    options[Math.floor(Math.random() * options.length)],
+    lead,
+    extra
+  );
+}
+
 async function getTemplateReply(
   supabase: any,
   intent: string,
@@ -142,40 +159,46 @@ async function getTemplateReply(
     .eq("template_id", template.id)
     .eq("active", true);
 
-  const options = [
-    template.base_message,
-    ...(variations?.map((v: any) => v.content) || []),
-  ]
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .filter((item, index, array) => array.indexOf(item) === index);
-
-  if (!options.length) return null;
-
-  const selected = options[Math.floor(Math.random() * options.length)];
-
-  return applyVariables(selected, lead, extra);
+  const reply = pickText(template.base_message, variations || [], lead, extra);
+  return reply || null;
 }
 
-async function getCustomTemplate(
-  supabase: any,
-  message: string,
-  lead: any,
-  companyId: string
-) {
-  const { data: templates, error } = await supabase
+async function findTriggeredTemplate({
+  supabase,
+  message,
+  lead,
+  companyId,
+  flowMode,
+  flowStep,
+}: {
+  supabase: any;
+  message: string;
+  lead: any;
+  companyId: string;
+  flowMode: "sequence" | "global";
+  flowStep?: number | null;
+}) {
+  let query = supabase
     .from("message_templates")
     .select(
-      "id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status, notify_enabled, notify_number, notify_message"
+      "id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status, notify_enabled, notify_number, notify_message, flow_mode, flow_step, next_step, message_variations(content)"
     )
     .eq("company_id", companyId)
     .eq("type", "ai")
     .eq("intent", "FAQ_CUSTOM")
     .eq("active", true)
-    .order("created_at", { ascending: false });
+    .eq("flow_mode", flowMode);
+
+  if (flowMode === "sequence") {
+    query = query.eq("flow_step", Number(flowStep || 1));
+  }
+
+  const { data: templates, error } = await query.order("created_at", {
+    ascending: false,
+  });
 
   if (error) {
-    console.error("ERRO AO BUSCAR GATILHOS PERSONALIZADOS:", error);
+    console.error("ERRO AO BUSCAR GATILHOS:", error);
     return null;
   }
 
@@ -189,19 +212,27 @@ async function getCustomTemplate(
     );
 
     if (matched) {
+      const reply = pickText(
+        template.base_message || "",
+        template.message_variations || [],
+        lead,
+        { lastMessage: message }
+      );
+
       return {
         id: template.id,
         name: template.name,
-        reply: applyVariables(template.base_message || "", lead, {
-          lastMessage: message,
-        }),
+        reply,
         mediaUrl: template.media_url || null,
         mediaType: template.media_type || "text",
         kanbanStatus: template.kanban_status || null,
         notifyEnabled: Boolean(template.notify_enabled),
         notifyNumber: template.notify_number || null,
         notifyMessage: template.notify_message || null,
-        source: "custom_trigger",
+        flowMode: template.flow_mode || "global",
+        flowStep: template.flow_step || null,
+        nextStep: template.next_step || null,
+        source: flowMode === "sequence" ? "sequence_trigger" : "global_trigger",
       };
     }
   }
@@ -467,15 +498,31 @@ async function getFinalReply(
   lead: any,
   companyId: string
 ) {
-  const customTemplate = await getCustomTemplate(
+  const currentStep = Number(lead?.current_flow_step || 1);
+
+  const sequenceTemplate = await findTriggeredTemplate({
     supabase,
     message,
     lead,
-    companyId
-  );
+    companyId,
+    flowMode: "sequence",
+    flowStep: currentStep,
+  });
 
-  if (customTemplate?.reply || customTemplate?.mediaUrl) {
-    return customTemplate;
+  if (sequenceTemplate?.reply || sequenceTemplate?.mediaUrl) {
+    return sequenceTemplate;
+  }
+
+  const globalTemplate = await findTriggeredTemplate({
+    supabase,
+    message,
+    lead,
+    companyId,
+    flowMode: "global",
+  });
+
+  if (globalTemplate?.reply || globalTemplate?.mediaUrl) {
+    return globalTemplate;
   }
 
   const templateReply = await getTemplateReply(
@@ -495,6 +542,9 @@ async function getFinalReply(
       notifyEnabled: false,
       notifyNumber: null,
       notifyMessage: null,
+      flowMode: "intent",
+      flowStep: null,
+      nextStep: null,
       source: "intent_template",
     };
   }
@@ -507,6 +557,9 @@ async function getFinalReply(
     notifyEnabled: false,
     notifyNumber: null,
     notifyMessage: null,
+    flowMode: "none",
+    flowStep: null,
+    nextStep: null,
     source: "no_template",
   };
 }
@@ -634,6 +687,7 @@ export async function POST(req: Request) {
           status: "respondido",
           session_id: sessionId,
           ai_paused: false,
+          current_flow_step: 1,
           last_message: message,
           last_message_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -679,6 +733,7 @@ export async function POST(req: Request) {
         last_message_at: new Date().toISOString(),
         whatsapp_lid: lid || lead.whatsapp_lid || null,
         remote_jid: remoteJid || lead.remote_jid || null,
+        current_flow_step: Number(lead.current_flow_step || 1),
         updated_at: new Date().toISOString(),
       })
       .eq("id", lead.id)
@@ -760,6 +815,7 @@ export async function POST(req: Request) {
         action: "no_template_found",
         intent,
         source: finalReply.source,
+        current_flow_step: Number(lead.current_flow_step || 1),
       });
     }
 
@@ -802,10 +858,16 @@ export async function POST(req: Request) {
 
     const nextStatus = finalReply.kanbanStatus || fallbackStatus;
 
+    const nextFlowStep =
+      finalReply.flowMode === "sequence" && finalReply.nextStep
+        ? Number(finalReply.nextStep)
+        : Number(lead.current_flow_step || 1);
+
     await supabase
       .from("leads")
       .update({
         status: nextStatus,
+        current_flow_step: nextFlowStep,
         last_message: message,
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -818,6 +880,10 @@ export async function POST(req: Request) {
       action: "resposta_template_configurado",
       intent,
       source: finalReply.source,
+      flow_mode: finalReply.flowMode,
+      flow_step: finalReply.flowStep,
+      next_step: finalReply.nextStep,
+      current_flow_step: nextFlowStep,
       lead_id: lead.id,
       company_id: companyId,
       phone: lead.phone || phone,

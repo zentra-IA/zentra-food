@@ -9,10 +9,17 @@ function clean(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function normalizePhone(value: string) {
+  const phone = clean(value);
+  if (!phone) return "";
+  if (phone.startsWith("55")) return phone;
+  if (phone.length === 10 || phone.length === 11) return `55${phone}`;
+  return phone;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { companyId, branchId } = requireCompany(req);
-
     const body = await req.json();
 
     const leadId = String(body?.leadId || "").trim();
@@ -39,13 +46,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const phone = clean(lead.phone || "");
+    const phone = normalizePhone(lead.phone || "");
     const lid = lead.whatsapp_lid ? clean(lead.whatsapp_lid) : null;
-    const sessionId = String(lead.session_id || 1);
+    const rawSessionId = String(lead.session_id || 1);
+    const sendSessionId = `${companyId}_${rawSessionId}`;
 
-    if (!phone) {
+    if (!phone && !lid) {
       return NextResponse.json(
-        { success: false, error: "Lead sem telefone" },
+        { success: false, error: "Lead sem telefone ou LID" },
         { status: 400 }
       );
     }
@@ -56,11 +64,11 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sessionId,
+        sessionId: sendSessionId,
         number: phone,
-        message,
         lid,
-        isLid: Boolean(lid),
+        isLid: Boolean(lid && !phone),
+        message,
       }),
     });
 
@@ -82,7 +90,14 @@ export async function POST(req: NextRequest) {
       branch_id: branchId || null,
       lead_id: lead.id,
       direction: "sent",
+      topic: "whatsapp",
+      extension: "text",
       content: message,
+      event: "message_sent",
+      payload: {
+        source: "inbox",
+        session_id: sendSessionId,
+      },
       created_at: new Date().toISOString(),
     });
 
@@ -99,6 +114,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      sessionId: sendSessionId,
+      phone,
+      lid,
       result,
     });
   } catch (error: any) {
