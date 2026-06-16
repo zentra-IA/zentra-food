@@ -15,6 +15,12 @@ function getSupabase() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
+const WHATSAPP_SERVER =
+  process.env.NEXT_PUBLIC_WHATSAPP_SERVER || "http://localhost:3011";
+
+const SESSIONS = [1, 2, 3, 4, 5];
+const MAX_PER_SESSION_DAY = 30;
+
 const ALLOWED_INTENTS = [
   "OPENING",
   "REATIVACAO",
@@ -29,6 +35,78 @@ const ALLOWED_INTENTS = [
   "ENDERECO",
 ];
 
+function buildSessionId(companyId: string, sessionId: number) {
+  return `${companyId}_${sessionId}`;
+}
+
+async function isSessionOnline(companyId: string, sessionId: number) {
+  try {
+    const finalSessionId = buildSessionId(companyId, sessionId);
+
+    const res = await fetch(`${WHATSAPP_SERVER}/status/${finalSessionId}`, {
+      cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    return data.status === "online" && Boolean(data?.me?.id || data?.me);
+  } catch {
+    return false;
+  }
+}
+
+async function countSentToday(
+  supabase: any,
+  companyId: string,
+  sessionId: number
+) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const { count } = await supabase
+    .from("automation_queue")
+    .select("*", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("session_id", sessionId)
+    .eq("status", "sent")
+    .gte("sent_at", today.toISOString());
+
+  return count || 0;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const supabase = getSupabase();
+    const { companyId } = requireCompany(req);
+
+    const stats: Record<number, any> = {};
+
+    for (const sessionId of SESSIONS) {
+      const [online, used] = await Promise.all([
+        isSessionOnline(companyId, sessionId),
+        countSentToday(supabase, companyId, sessionId),
+      ]);
+
+      stats[sessionId] = {
+        online,
+        used,
+        remaining: Math.max(0, MAX_PER_SESSION_DAY - used),
+        limit: MAX_PER_SESSION_DAY,
+      };
+    }
+
+    return NextResponse.json({
+      success: true,
+      stats,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || "Erro ao carregar status da fila" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = getSupabase();
@@ -37,7 +115,9 @@ export async function POST(req: NextRequest) {
 
     const leadId = String(body?.lead_id || "").trim();
     const intent = String(body?.intent || "OPENING").trim();
-   const sessionId = Number(body?.session_id || 0);
+
+    // 0 = distribuição inteligente automática
+    const sessionId = Number(body?.session_id ?? 0);
 
     if (!leadId) {
       return NextResponse.json(
@@ -70,6 +150,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Lead sem telefone" }, { status: 400 });
     }
 
+    const finalSessionId =
+      Number.isNaN(sessionId) || sessionId < 0 ? 0 : sessionId;
+
     const { data: item, error: queueError } = await supabase
       .from("automation_queue")
       .insert({
@@ -77,13 +160,14 @@ export async function POST(req: NextRequest) {
         branch_id: branchId || null,
         lead_id: lead.id,
         phone: lead.phone,
-        session_id: Number.isNaN(sessionId) ? 0 : sessionId,
+        session_id: finalSessionId,
         type: "campaign",
         intent,
         status: "pending",
         scheduled_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
         attempts: 0,
+        error: null,
       })
       .select("*")
       .single();
@@ -95,6 +179,9 @@ export async function POST(req: NextRequest) {
       .update({
         status: intent === "OPENING" ? "enviado" : "campanha",
         conversation_stage: intent,
+        campaign_status: "pending",
+        campaign_error: null,
+        campaign_sent_at: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", lead.id)
@@ -102,6 +189,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      smart_dispatch: finalSessionId === 0,
       item,
     });
   } catch (error: any) {

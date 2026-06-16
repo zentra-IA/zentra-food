@@ -40,6 +40,9 @@ const VARIABLES = [
   { label: "Cardápio", value: "{cardapio}" },
 ];
 
+const DEFAULT_NOTIFY_MESSAGE =
+  "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}";
+
 function hasFeature(data: any, feature: string) {
   const fromPlan = data?.features?.some(
     (item: any) => item.feature === feature && item.enabled
@@ -76,6 +79,7 @@ export default function MessagesPage() {
 
   const [companyData, setCompanyData] = useState<any>(null);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [type, setType] = useState<"campaign" | "ai">("campaign");
   const [name, setName] = useState("");
@@ -90,9 +94,7 @@ export default function MessagesPage() {
 
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [notifyNumber, setNotifyNumber] = useState("");
-  const [notifyMessage, setNotifyMessage] = useState(
-    "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}"
-  );
+  const [notifyMessage, setNotifyMessage] = useState(DEFAULT_NOTIFY_MESSAGE);
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -133,6 +135,23 @@ export default function MessagesPage() {
     loadTemplates();
   }, []);
 
+  function resetForm() {
+    setEditingId(null);
+    setType("campaign");
+    setName("");
+    setIntent("OPENING");
+    setBaseMessage("");
+    setMessageVariations("");
+    setTriggerKeywords("");
+    setMatchType("contains");
+    setKanbanStatus("");
+    setMediaUrl("");
+    setMediaType("text");
+    setNotifyEnabled(false);
+    setNotifyNumber("");
+    setNotifyMessage(DEFAULT_NOTIFY_MESSAGE);
+  }
+
   function changeType(nextType: "campaign" | "ai") {
     if (nextType === "ai" && !canUseChatbot) {
       alert("Chatbot IA está bloqueado no seu plano atual.");
@@ -158,7 +177,10 @@ export default function MessagesPage() {
 
       setTimeout(() => {
         textarea?.focus();
-        textarea?.setSelectionRange(start + variable.length, start + variable.length);
+        textarea?.setSelectionRange(
+          start + variable.length,
+          start + variable.length
+        );
       }, 0);
     }
 
@@ -173,7 +195,10 @@ export default function MessagesPage() {
 
       setTimeout(() => {
         textarea?.focus();
-        textarea?.setSelectionRange(start + variable.length, start + variable.length);
+        textarea?.setSelectionRange(
+          start + variable.length,
+          start + variable.length
+        );
       }, 0);
     }
   }
@@ -206,6 +231,39 @@ export default function MessagesPage() {
     }
   }
 
+  function editTemplate(item: any) {
+    setEditingId(item.id);
+    setType(item.type || "campaign");
+    setName(item.name || "");
+    setIntent(item.intent || "OPENING");
+    setBaseMessage(item.base_message || "");
+
+    setMessageVariations(
+      Array.isArray(item.message_variations)
+        ? item.message_variations.map((v: any) => v.content).join("\n")
+        : ""
+    );
+
+    setTriggerKeywords(
+      Array.isArray(item.trigger_keywords)
+        ? item.trigger_keywords.join("\n")
+        : ""
+    );
+
+    setMatchType(item.match_type || "contains");
+    setKanbanStatus(item.kanban_status || "");
+    setMediaUrl(item.media_url || "");
+    setMediaType(item.media_type || "text");
+    setNotifyEnabled(Boolean(item.notify_enabled));
+    setNotifyNumber(item.notify_number || "");
+    setNotifyMessage(item.notify_message || DEFAULT_NOTIFY_MESSAGE);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
   async function saveTemplate() {
     if (type === "ai" && !canUseChatbot) {
       alert("Chatbot IA está bloqueado no seu plano atual.");
@@ -231,10 +289,11 @@ export default function MessagesPage() {
 
     try {
       const res = await fetch("/api/crm/message-templates", {
-        method: "POST",
+        method: editingId ? "PATCH" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: editingId,
           type,
           name,
           intent,
@@ -258,21 +317,7 @@ export default function MessagesPage() {
         return;
       }
 
-      setName("");
-      setBaseMessage("");
-      setMessageVariations("");
-      setTriggerKeywords("");
-      setMediaUrl("");
-      setMediaType("text");
-      setKanbanStatus("");
-      setNotifyEnabled(false);
-      setNotifyNumber("");
-      setNotifyMessage(
-        "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}"
-      );
-      setIntent("OPENING");
-      setType("campaign");
-
+      resetForm();
       await loadTemplates();
     } finally {
       setLoading(false);
@@ -331,12 +376,27 @@ export default function MessagesPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Configure disparos, respostas automáticas, variações, áudio, imagem, PDF, Kanban e aviso interno.
+            Configure disparos, respostas automáticas, variações, áudio, imagem,
+            PDF, Kanban e aviso interno.
           </p>
         </section>
 
         <section className="mt-5 rounded-[2rem] border border-zinc-800 bg-zinc-950 p-5">
-          <h2 className="text-xl font-black">Nova automação</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-xl font-black">
+              {editingId ? "Editar automação" : "Nova automação"}
+            </h2>
+
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-xl bg-zinc-800 px-4 py-2 text-xs font-black"
+              >
+                Cancelar edição
+              </button>
+            )}
+          </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <select
@@ -381,7 +441,8 @@ export default function MessagesPage() {
                     className="input min-h-32"
                   />
                   <p className="mt-2 text-xs text-zinc-500">
-                    Se o cliente enviar qualquer uma dessas frases, o robô envia a resposta configurada abaixo.
+                    Se o cliente enviar qualquer uma dessas frases, o robô envia
+                    a resposta configurada abaixo.
                   </p>
                 </div>
 
@@ -390,7 +451,9 @@ export default function MessagesPage() {
                   onChange={(e) => setMatchType(e.target.value)}
                   className="input"
                 >
-                  <option value="contains">Palavra em qualquer lugar da mensagem</option>
+                  <option value="contains">
+                    Palavra em qualquer lugar da mensagem
+                  </option>
                   <option value="exact">Mensagem igual exatamente</option>
                   <option value="starts_with">Mensagem começa com</option>
                 </select>
@@ -456,14 +519,16 @@ export default function MessagesPage() {
               />
 
               <p className="mt-2 text-xs text-zinc-500">
-                O sistema escolhe uma versão aleatória em cada disparo. Isso ajuda a evitar mensagens repetidas.
+                O sistema escolhe uma versão aleatória em cada disparo. Isso
+                ajuda a evitar mensagens repetidas.
               </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-black p-4 md:col-span-2">
               <p className="text-sm font-black">Mídia opcional</p>
               <p className="mt-1 text-xs text-zinc-500">
-                Anexe áudio, imagem, PDF ou vídeo para enviar junto com a resposta.
+                Anexe áudio, imagem, PDF ou vídeo para enviar junto com a
+                resposta.
               </p>
 
               <input
@@ -489,6 +554,7 @@ export default function MessagesPage() {
                   </p>
                   <p className="mt-1 break-all text-zinc-500">{mediaUrl}</p>
                   <button
+                    type="button"
                     onClick={() => {
                       setMediaUrl("");
                       setMediaType("text");
@@ -512,7 +578,8 @@ export default function MessagesPage() {
               </label>
 
               <p className="mt-2 text-xs text-zinc-400">
-                Use isso para mandar um alerta interno para outro WhatsApp, como vendedor, atendente, gerente ou cozinha.
+                Use isso para mandar um alerta interno para outro WhatsApp, como
+                vendedor, atendente, gerente ou cozinha.
               </p>
 
               {notifyEnabled && (
@@ -550,11 +617,16 @@ export default function MessagesPage() {
           </div>
 
           <button
+            type="button"
             onClick={saveTemplate}
             disabled={loading || uploading}
             className="mt-4 w-full rounded-2xl bg-emerald-600 px-5 py-4 text-sm font-black hover:bg-emerald-700 disabled:opacity-50 md:w-auto"
           >
-            {loading ? "Salvando..." : "Salvar automação"}
+            {loading
+              ? "Salvando..."
+              : editingId
+              ? "Atualizar automação"
+              : "Salvar automação"}
           </button>
         </section>
 
@@ -573,8 +645,17 @@ export default function MessagesPage() {
                   </p>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
+                    type="button"
+                    onClick={() => editTemplate(item)}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-black"
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => toggleTemplate(item)}
                     className="rounded-xl bg-zinc-800 px-4 py-2 text-xs font-black"
                   >
@@ -582,6 +663,7 @@ export default function MessagesPage() {
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => deleteTemplate(item.id)}
                     className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black"
                   >
@@ -633,6 +715,7 @@ export default function MessagesPage() {
                   <a
                     href={item.media_url}
                     target="_blank"
+                    rel="noreferrer"
                     className="mt-2 block break-all text-emerald-300"
                   >
                     {item.media_url}
