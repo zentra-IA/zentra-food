@@ -43,11 +43,8 @@ function getCrmUrlBySession() {
 async function resolveJid(session, payload) {
   const { number, phone, lid, jid: directJid } = payload;
 
-  if (directJid) {
-    return directJid;
-  }
+  if (directJid) return directJid;
 
-  // SEMPRE prioriza telefone normal
   const finalPhone = normalizeBrazilPhone(number || phone);
 
   if (finalPhone) {
@@ -57,24 +54,28 @@ async function resolveJid(session, payload) {
       const result = await session.sock.onWhatsApp(finalPhone);
       const found = Array.isArray(result) ? result[0] : null;
 
+      console.log("🔎 onWhatsApp:", {
+        input: finalPhone,
+        baseJid,
+        result,
+      });
+
       if (found?.exists && found?.jid) {
         return found.jid;
       }
 
       return baseJid;
     } catch (error) {
-      console.log("⚠️ Falha no onWhatsApp:", error.message);
+      console.log("⚠️ Falha ao validar onWhatsApp:", error.message);
       return baseJid;
     }
   }
 
-  // Usa LID somente se não houver telefone
   if (lid) {
     return `${clean(lid)}@lid`;
   }
 
-  throw new Error("Telefone inválido");
-}
+  throw new Error("Telefone ou LID inválido");
 }
 
 async function notifyCRM(payload) {
@@ -101,6 +102,7 @@ async function notifyCRM(payload) {
     return data;
   } catch (error) {
     console.error("Erro ao avisar Zentra Food:", error.message);
+    return null;
   }
 }
 
@@ -185,55 +187,22 @@ async function createSession(sessionId) {
   };
 
   const sock = makeWASocket({
-  version,
-  auth: state,
-  printQRInTerminal: false,
-
-  browser: ["Ubuntu", "Chrome", "20.0.04"],
-
-  syncFullHistory: false,
-
-  markOnlineOnConnect: true,
-
-  generateHighQualityLinkPreview: false,
-
-  connectTimeoutMs: 60000,
-  keepAliveIntervalMs: 30000,
-
-  defaultQueryTimeoutMs: 60000,
-});
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    browser: ["Ubuntu", "Chrome", "20.0.04"],
+    syncFullHistory: false,
+    markOnlineOnConnect: true,
+    generateHighQualityLinkPreview: false,
+    connectTimeoutMs: 60000,
+    keepAliveIntervalMs: 30000,
+    defaultQueryTimeoutMs: 60000,
+  });
 
   sessions[sessionId].sock = sock;
 
-});
-
-  sock.ev.on("messages.update", (updates) => {
-    for (const update of updates || []) {
-      const messageId = update?.key?.id;
-      if (!messageId) continue;
-
-      const pending = pendingAcks.get(messageId);
-      if (!pending) continue;
-
-      if (update.error) {
-        pending.reject(
-          new Error(update.error?.message || "WhatsApp recusou a mensagem")
-        );
-        continue;
-      }
-
-      const status = Number(update.update?.status || update.status || 0);
-
-      console.log("📌 ACK update:", {
-        messageId,
-        status,
-        update,
-      });
-
-      if (status >= 2) {
-        pending.resolve(update);
-      }
-    }
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
   });
 
   sock.ev.on("messaging-history.set", () => {
@@ -299,9 +268,9 @@ async function createSession(sessionId) {
   });
 
   sock.ev.on("connection.update", async (update) => {
-  console.log("CONNECTION UPDATE:", JSON.stringify(update, null, 2));
+    console.log("CONNECTION UPDATE:", JSON.stringify(update, null, 2));
 
-  const { connection, qr, lastDisconnect } = update;
+    const { connection, qr, lastDisconnect } = update;
 
     if (qr) {
       try {
@@ -487,9 +456,17 @@ app.post("/send", async (req, res) => {
     const payload = req.body;
 
     const { sessionId, message } = payload;
-
     const finalNumber =
       payload.number || payload.phone || payload.lid || payload.jid;
+
+    console.log("📤 /send recebido:", {
+      sessionId,
+      number: payload.number,
+      phone: payload.phone,
+      lid: payload.lid,
+      jid: payload.jid,
+      message,
+    });
 
     if (!sessionId || !finalNumber || !message) {
       return res.status(400).json({
@@ -500,10 +477,11 @@ app.post("/send", async (req, res) => {
 
     const session = sessions[String(sessionId)];
 
-    if (!session?.sock) {
+    if (!session || !session.sock) {
       return res.status(400).json({
         success: false,
         error: `Sessão ${sessionId} não encontrada`,
+        activeSessions: Object.keys(sessions),
       });
     }
 
@@ -515,6 +493,15 @@ app.post("/send", async (req, res) => {
       });
     }
 
+    const cleanMessage = String(message || "").trim();
+
+    if (!cleanMessage) {
+      return res.status(400).json({
+        success: false,
+        error: "Mensagem vazia",
+      });
+    }
+
     const jid = await resolveJid(session, payload);
 
     console.log("🎯 JID final:", jid);
@@ -523,58 +510,40 @@ app.post("/send", async (req, res) => {
       await session.sock.presenceSubscribe(jid);
       await session.sock.sendPresenceUpdate("composing", jid);
     } catch (e) {
-      console.log("⚠️ Presence ignorado:", e.message);
+      console.log("⚠️ Falha no presence/composing:", e.message);
     }
 
-    await sleep(1000);
+    await sleep(Math.floor(Math.random() * 2000) + 1000);
 
     const result = await session.sock.sendMessage(jid, {
-      text: String(message).trim(),
+      text: cleanMessage,
     });
 
     try {
       await session.sock.sendPresenceUpdate("paused", jid);
     } catch {}
 
-    console.log("✅ Mensagem enviada:", result?.key?.id);
+    console.log("✅ Resultado sendMessage:", result);
 
-    return res.json({
-      success: true,
-      jid,
-      messageId: result?.key?.id || null,
-      from: session.me || session.sock.user || null,
-    });
-  } catch (error) {
-    console.error("❌ Erro no envio:", error);
-
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-    try {
-      const ack = await waitForAck(result.key.id);
-      console.log("✅ ACK confirmado:", ack);
-    } catch (ackError) {
-      console.error("❌ ACK falhou:", ackError.message);
-
+    if (!result?.key?.id) {
       return res.status(500).json({
         success: false,
-        error: ackError.message,
+        error: "WhatsApp não gerou ID da mensagem",
         jid,
-        messageId: result.key.id,
+        result,
       });
     }
 
-    try {
-      await session.sock.sendPresenceUpdate("paused", jid);
-    } catch {}
+    console.log("✅ Mensagem enviada sem aguardar ACK:", {
+      jid,
+      messageId: result.key.id,
+    });
 
     return res.json({
       success: true,
       jid,
       messageId: result.key.id,
+      ack: "ignored",
       from: session.me || session.sock.user || null,
     });
   } catch (error) {
@@ -623,8 +592,12 @@ app.post("/send-audio", async (req, res) => {
 
     const jid = await resolveJid(session, payload);
 
-    await session.sock.presenceSubscribe(jid);
-    await session.sock.sendPresenceUpdate("recording", jid);
+    try {
+      await session.sock.presenceSubscribe(jid);
+      await session.sock.sendPresenceUpdate("recording", jid);
+    } catch (e) {
+      console.log("⚠️ Falha no presence/recording:", e.message);
+    }
 
     await sleep(Math.floor(Math.random() * 3000) + 2000);
 
@@ -634,39 +607,31 @@ app.post("/send-audio", async (req, res) => {
       ptt: true,
     });
 
+    try {
+      await session.sock.sendPresenceUpdate("paused", jid);
+    } catch {}
+
     console.log("✅ Resultado sendAudio:", result);
 
     if (!result?.key?.id) {
       return res.status(500).json({
         success: false,
-        error: "WhatsApp não confirmou envio do áudio",
+        error: "WhatsApp não gerou ID do áudio",
         jid,
         result,
       });
     }
 
-    try {
-      const ack = await waitForAck(result.key.id);
-      console.log("✅ ACK áudio confirmado:", ack);
-    } catch (ackError) {
-      console.error("❌ ACK áudio falhou:", ackError.message);
-
-      return res.status(500).json({
-        success: false,
-        error: ackError.message,
-        jid,
-        messageId: result.key.id,
-      });
-    }
-
-    try {
-      await session.sock.sendPresenceUpdate("paused", jid);
-    } catch {}
+    console.log("✅ Áudio enviado sem aguardar ACK:", {
+      jid,
+      messageId: result.key.id,
+    });
 
     return res.json({
       success: true,
       jid,
       messageId: result.key.id,
+      ack: "ignored",
       from: session.me || session.sock.user || null,
     });
   } catch (error) {
