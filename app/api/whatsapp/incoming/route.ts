@@ -53,6 +53,7 @@ function keywordMatches(message: string, keyword: string, matchType = "contains"
   if (!key) return false;
   if (matchType === "exact") return text === key;
   if (matchType === "starts_with") return text.startsWith(key);
+
   return text.includes(key);
 }
 
@@ -101,6 +102,16 @@ function buildSendSession(companyId: string, sessionId: number | string) {
   return `${companyId}_${sessionId}`;
 }
 
+function getTemplateCompanyIds(companyId: string) {
+  const ids = [companyId];
+
+  if (DEFAULT_COMPANY_ID && DEFAULT_COMPANY_ID !== companyId) {
+    ids.push(DEFAULT_COMPANY_ID);
+  }
+
+  return ids;
+}
+
 function applyVariables(text: string, lead: any, extra: any = {}) {
   const phone = lead?.phone || extra?.phone || "";
   const lastMessage = extra?.lastMessage || "";
@@ -140,27 +151,42 @@ async function getTemplateReply(
   companyId: string,
   extra: any = {}
 ) {
-  const { data: template } = await supabase
-    .from("message_templates")
-    .select("id, base_message")
-    .eq("company_id", companyId)
-    .eq("type", "ai")
-    .eq("intent", intent)
-    .eq("active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  for (const targetCompanyId of getTemplateCompanyIds(companyId)) {
+    const { data: template, error } = await supabase
+      .from("message_templates")
+      .select("id, base_message, company_id")
+      .eq("company_id", targetCompanyId)
+      .eq("type", "ai")
+      .eq("intent", intent)
+      .eq("active", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (!template) return null;
+    if (error) {
+      console.error("ERRO AO BUSCAR TEMPLATE POR INTENT:", error);
+      continue;
+    }
 
-  const { data: variations } = await supabase
-    .from("message_variations")
-    .select("content")
-    .eq("template_id", template.id)
-    .eq("active", true);
+    if (!template) continue;
 
-  const reply = pickText(template.base_message, variations || [], lead, extra);
-  return reply || null;
+    const { data: variations } = await supabase
+      .from("message_variations")
+      .select("content")
+      .eq("template_id", template.id)
+      .eq("active", true);
+
+    const reply = pickText(template.base_message, variations || [], lead, extra);
+
+    if (reply) {
+      return {
+        reply,
+        templateCompanyId: template.company_id || targetCompanyId,
+      };
+    }
+  }
+
+  return null;
 }
 
 async function findTriggeredTemplate({
@@ -178,62 +204,65 @@ async function findTriggeredTemplate({
   flowMode: "sequence" | "global";
   flowStep?: number | null;
 }) {
-  let query = supabase
-    .from("message_templates")
-    .select(
-      "id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status, notify_enabled, notify_number, notify_message, flow_mode, flow_step, next_step, message_variations(content)"
-    )
-    .eq("company_id", companyId)
-    .eq("type", "ai")
-    .eq("intent", "FAQ_CUSTOM")
-    .eq("active", true)
-    .eq("flow_mode", flowMode);
+  for (const targetCompanyId of getTemplateCompanyIds(companyId)) {
+    let query = supabase
+      .from("message_templates")
+      .select(
+        "id, company_id, name, base_message, trigger_keywords, match_type, media_url, media_type, kanban_status, notify_enabled, notify_number, notify_message, flow_mode, flow_step, next_step, message_variations(content)"
+      )
+      .eq("company_id", targetCompanyId)
+      .eq("type", "ai")
+      .eq("intent", "FAQ_CUSTOM")
+      .eq("active", true)
+      .eq("flow_mode", flowMode);
 
-  if (flowMode === "sequence") {
-    query = query.eq("flow_step", Number(flowStep || 1));
-  }
+    if (flowMode === "sequence") {
+      query = query.eq("flow_step", Number(flowStep || 1));
+    }
 
-  const { data: templates, error } = await query.order("created_at", {
-    ascending: false,
-  });
+    const { data: templates, error } = await query.order("created_at", {
+      ascending: false,
+    });
 
-  if (error) {
-    console.error("ERRO AO BUSCAR GATILHOS:", error);
-    return null;
-  }
+    if (error) {
+      console.error("ERRO AO BUSCAR GATILHOS:", error);
+      continue;
+    }
 
-  for (const template of templates || []) {
-    const triggers = Array.isArray(template.trigger_keywords)
-      ? template.trigger_keywords
-      : [];
+    for (const template of templates || []) {
+      const triggers = Array.isArray(template.trigger_keywords)
+        ? template.trigger_keywords
+        : [];
 
-    const matched = triggers.some((keyword: string) =>
-      keywordMatches(message, keyword, template.match_type || "contains")
-    );
-
-    if (matched) {
-      const reply = pickText(
-        template.base_message || "",
-        template.message_variations || [],
-        lead,
-        { lastMessage: message }
+      const matched = triggers.some((keyword: string) =>
+        keywordMatches(message, keyword, template.match_type || "contains")
       );
 
-      return {
-        id: template.id,
-        name: template.name,
-        reply,
-        mediaUrl: template.media_url || null,
-        mediaType: template.media_type || "text",
-        kanbanStatus: template.kanban_status || null,
-        notifyEnabled: Boolean(template.notify_enabled),
-        notifyNumber: template.notify_number || null,
-        notifyMessage: template.notify_message || null,
-        flowMode: template.flow_mode || "global",
-        flowStep: template.flow_step || null,
-        nextStep: template.next_step || null,
-        source: flowMode === "sequence" ? "sequence_trigger" : "global_trigger",
-      };
+      if (matched) {
+        const reply = pickText(
+          template.base_message || "",
+          template.message_variations || [],
+          lead,
+          { lastMessage: message }
+        );
+
+        return {
+          id: template.id,
+          name: template.name,
+          reply,
+          mediaUrl: template.media_url || null,
+          mediaType: template.media_type || "text",
+          kanbanStatus: template.kanban_status || null,
+          notifyEnabled: Boolean(template.notify_enabled),
+          notifyNumber: template.notify_number || null,
+          notifyMessage: template.notify_message || null,
+          flowMode: template.flow_mode || "global",
+          flowStep: template.flow_step || null,
+          nextStep: template.next_step || null,
+          templateCompanyId: template.company_id || targetCompanyId,
+          source: flowMode === "sequence" ? "sequence_trigger" : "global_trigger",
+        };
+      }
     }
   }
 
@@ -525,7 +554,7 @@ async function getFinalReply(
     return globalTemplate;
   }
 
-  const templateReply = await getTemplateReply(
+  const templateResult = await getTemplateReply(
     supabase,
     intent,
     lead,
@@ -533,9 +562,9 @@ async function getFinalReply(
     { lastMessage: message }
   );
 
-  if (templateReply) {
+  if (templateResult?.reply) {
     return {
-      reply: templateReply,
+      reply: templateResult.reply,
       mediaUrl: null,
       mediaType: "text",
       kanbanStatus: null,
@@ -545,6 +574,7 @@ async function getFinalReply(
       flowMode: "intent",
       flowStep: null,
       nextStep: null,
+      templateCompanyId: templateResult.templateCompanyId,
       source: "intent_template",
     };
   }
@@ -560,6 +590,7 @@ async function getFinalReply(
     flowMode: "none",
     flowStep: null,
     nextStep: null,
+    templateCompanyId: null,
     source: "no_template",
   };
 }
@@ -749,7 +780,7 @@ export async function POST(req: Request) {
     const intent = detectIntent(message);
 
     if (intent === "SEM_INTERESSE") {
-      const reply = await getTemplateReply(
+      const templateResult = await getTemplateReply(
         supabase,
         "SEM_INTERESSE",
         lead,
@@ -757,7 +788,7 @@ export async function POST(req: Request) {
         { lastMessage: message }
       );
 
-      if (!reply) {
+      if (!templateResult?.reply) {
         await supabase
           .from("leads")
           .update({
@@ -783,7 +814,7 @@ export async function POST(req: Request) {
         lid,
         isLid: incomingIsLid,
         leadId: lead.id,
-        reply,
+        reply: templateResult.reply,
       });
 
       await supabase
@@ -798,7 +829,11 @@ export async function POST(req: Request) {
         .eq("id", lead.id)
         .eq("company_id", companyId);
 
-      return NextResponse.json({ success: true, action: "sem_interesse" });
+      return NextResponse.json({
+        success: true,
+        action: "sem_interesse",
+        template_company_id: templateResult.templateCompanyId,
+      });
     }
 
     const finalReply = await getFinalReply(
@@ -816,6 +851,8 @@ export async function POST(req: Request) {
         intent,
         source: finalReply.source,
         current_flow_step: Number(lead.current_flow_step || 1),
+        company_id: companyId,
+        fallback_company_id: DEFAULT_COMPANY_ID,
       });
     }
 
@@ -886,6 +923,8 @@ export async function POST(req: Request) {
       current_flow_step: nextFlowStep,
       lead_id: lead.id,
       company_id: companyId,
+      template_company_id: finalReply.templateCompanyId,
+      fallback_company_id: DEFAULT_COMPANY_ID,
       phone: lead.phone || phone,
       lid,
       session_id: sessionId,
