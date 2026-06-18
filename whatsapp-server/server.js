@@ -41,9 +41,13 @@ function getCrmUrlBySession() {
 }
 
 async function resolveJid(session, payload) {
-  const { number, phone, lid, jid: directJid } = payload;
+  const { number, phone, lid, isLid, jid: directJid } = payload;
 
   if (directJid) return directJid;
+
+  if (isLid && lid) {
+    return `${clean(lid)}@lid`;
+  }
 
   const finalPhone = normalizeBrazilPhone(number || phone);
 
@@ -54,26 +58,15 @@ async function resolveJid(session, payload) {
       const result = await session.sock.onWhatsApp(finalPhone);
       const found = Array.isArray(result) ? result[0] : null;
 
-      console.log("🔎 onWhatsApp:", {
-        input: finalPhone,
-        baseJid,
-        result,
-      });
-
-      if (found?.exists && found?.jid) {
-        return found.jid;
-      }
+      if (found?.exists && found?.jid) return found.jid;
 
       return baseJid;
     } catch (error) {
-      console.log("⚠️ Falha ao validar onWhatsApp:", error.message);
       return baseJid;
     }
   }
 
-  if (lid) {
-    return `${clean(lid)}@lid`;
-  }
+  if (lid) return `${clean(lid)}@lid`;
 
   throw new Error("Telefone ou LID inválido");
 }
