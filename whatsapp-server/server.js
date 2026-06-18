@@ -20,7 +20,6 @@ const ZENTRA_APP_URL = process.env.ZENTRA_APP_URL || "http://localhost:3010";
 
 const sessions = {};
 const starting = {};
-const pendingAcks = new Map();
 
 function clean(value) {
   return String(value || "").replace(/\D/g, "");
@@ -28,28 +27,6 @@ function clean(value) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function waitForAck(messageId, timeout = 25000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingAcks.delete(messageId);
-      reject(new Error("WhatsApp não confirmou entrega no tempo esperado"));
-    }, timeout);
-
-    pendingAcks.set(messageId, {
-      resolve: (data) => {
-        clearTimeout(timer);
-        pendingAcks.delete(messageId);
-        resolve(data);
-      },
-      reject: (error) => {
-        clearTimeout(timer);
-        pendingAcks.delete(messageId);
-        reject(error);
-      },
-    });
-  });
 }
 
 function normalizeBrazilPhone(value) {
@@ -64,41 +41,40 @@ function getCrmUrlBySession() {
 }
 
 async function resolveJid(session, payload) {
-  const { number, phone, lid, isLid, jid: directJid } = payload;
+  const { number, phone, lid, jid: directJid } = payload;
 
-  if (directJid) return directJid;
+  if (directJid) {
+    return directJid;
+  }
 
-  if (isLid && lid) {
+  // SEMPRE prioriza telefone normal
+  const finalPhone = normalizeBrazilPhone(number || phone);
+
+  if (finalPhone) {
+    const baseJid = `${finalPhone}@s.whatsapp.net`;
+
+    try {
+      const result = await session.sock.onWhatsApp(finalPhone);
+      const found = Array.isArray(result) ? result[0] : null;
+
+      if (found?.exists && found?.jid) {
+        return found.jid;
+      }
+
+      return baseJid;
+    } catch (error) {
+      console.log("⚠️ Falha no onWhatsApp:", error.message);
+      return baseJid;
+    }
+  }
+
+  // Usa LID somente se não houver telefone
+  if (lid) {
     return `${clean(lid)}@lid`;
   }
 
-  const finalPhone = normalizeBrazilPhone(number || phone || lid);
-
-  if (!finalPhone) {
-    throw new Error("Telefone inválido");
-  }
-
-  const baseJid = `${finalPhone}@s.whatsapp.net`;
-
-  try {
-    const result = await session.sock.onWhatsApp(baseJid);
-    const found = Array.isArray(result) ? result[0] : null;
-
-    console.log("🔎 onWhatsApp:", {
-      input: finalPhone,
-      baseJid,
-      result,
-    });
-
-    if (found?.exists && found?.jid) {
-      return found.jid;
-    }
-
-    throw new Error(`Número não encontrado no WhatsApp: ${finalPhone}`);
-  } catch (error) {
-    console.log("⚠️ Falha ao validar onWhatsApp:", error.message);
-    return baseJid;
-  }
+  throw new Error("Telefone inválido");
+}
 }
 
 async function notifyCRM(payload) {
@@ -229,8 +205,6 @@ async function createSession(sessionId) {
 
   sessions[sessionId].sock = sock;
 
-  sock.ev.on("creds.update", async () => {
-  await saveCreds();
 });
 
   sock.ev.on("messages.update", (updates) => {
@@ -513,17 +487,9 @@ app.post("/send", async (req, res) => {
     const payload = req.body;
 
     const { sessionId, message } = payload;
+
     const finalNumber =
       payload.number || payload.phone || payload.lid || payload.jid;
-
-    console.log("📤 /send recebido:", {
-      sessionId,
-      number: payload.number,
-      phone: payload.phone,
-      lid: payload.lid,
-      jid: payload.jid,
-      message,
-    });
 
     if (!sessionId || !finalNumber || !message) {
       return res.status(400).json({
@@ -534,11 +500,10 @@ app.post("/send", async (req, res) => {
 
     const session = sessions[String(sessionId)];
 
-    if (!session || !session.sock) {
+    if (!session?.sock) {
       return res.status(400).json({
         success: false,
         error: `Sessão ${sessionId} não encontrada`,
-        activeSessions: Object.keys(sessions),
       });
     }
 
@@ -550,15 +515,6 @@ app.post("/send", async (req, res) => {
       });
     }
 
-    const cleanMessage = String(message || "").trim();
-
-    if (!cleanMessage) {
-      return res.status(400).json({
-        success: false,
-        error: "Mensagem vazia",
-      });
-    }
-
     const jid = await resolveJid(session, payload);
 
     console.log("🎯 JID final:", jid);
@@ -567,26 +523,36 @@ app.post("/send", async (req, res) => {
       await session.sock.presenceSubscribe(jid);
       await session.sock.sendPresenceUpdate("composing", jid);
     } catch (e) {
-      console.log("⚠️ Falha no presence/composing:", e.message);
+      console.log("⚠️ Presence ignorado:", e.message);
     }
 
-    await sleep(Math.floor(Math.random() * 2000) + 1000);
+    await sleep(1000);
 
     const result = await session.sock.sendMessage(jid, {
-      text: cleanMessage,
+      text: String(message).trim(),
     });
 
-    console.log("✅ Resultado sendMessage:", result);
+    try {
+      await session.sock.sendPresenceUpdate("paused", jid);
+    } catch {}
 
-    if (!result?.key?.id) {
-      return res.status(500).json({
-        success: false,
-        error: "WhatsApp não gerou ID da mensagem",
-        jid,
-        result,
-      });
-    }
+    console.log("✅ Mensagem enviada:", result?.key?.id);
 
+    return res.json({
+      success: true,
+      jid,
+      messageId: result?.key?.id || null,
+      from: session.me || session.sock.user || null,
+    });
+  } catch (error) {
+    console.error("❌ Erro no envio:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
     try {
       const ack = await waitForAck(result.key.id);
       console.log("✅ ACK confirmado:", ack);
