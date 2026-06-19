@@ -222,19 +222,19 @@ async function createSession(sessionId) {
         if (msg.message.protocolMessage) continue;
 
         const participant = msg.key?.participant || "";
-        const senderJid = participant || remoteJid;
-        const isLid = senderJid.includes("@lid");
+const senderJid = participant || remoteJid;
+const isLid = senderJid.includes("@lid");
 
-       const lidFromJid = senderJid.includes("@lid")
+const phoneFromJid = senderJid.includes("@s.whatsapp.net")
+  ? clean(senderJid.replace("@s.whatsapp.net", ""))
+  : null;
+
+const lidFromJid = senderJid.includes("@lid")
   ? senderJid
   : null;
 
-        const lidFromJid = senderJid.includes("@lid")
-  ? senderJid
-  : null;
-
-        const pushName = msg.pushName || "";
-        const number = phoneFromJid || lidFromJid || clean(senderJid);
+const pushName = msg.pushName || "";
+const number = phoneFromJid || clean(senderJid);
 
         if (!number) continue;
 
