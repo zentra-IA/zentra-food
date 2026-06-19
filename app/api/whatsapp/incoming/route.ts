@@ -26,16 +26,24 @@ const DEFAULT_COMPANY_ID =
 const DEFAULT_BRANCH_ID =
   process.env.DEFAULT_BRANCH_ID || "1f07f893-48c6-4b9c-9c5f-4b680a4fef6c";
 
-function clean(value: string) {
+function clean(value: any) {
   return String(value || "").replace(/\D/g, "");
 }
 
-function normalizePhone(value: string) {
+function normalizePhone(value: any) {
   const phone = clean(value);
   if (!phone) return "";
   if (phone.startsWith("55")) return phone;
   if (phone.length === 10 || phone.length === 11) return `55${phone}`;
   return phone;
+}
+
+function normalizeLid(value: any) {
+  if (!value) return null;
+  const raw = String(value);
+  if (raw.includes("@lid")) return raw;
+  const cleaned = clean(raw);
+  return cleaned ? `${cleaned}@lid` : null;
 }
 
 function normalizeText(value: string) {
@@ -56,16 +64,11 @@ function keywordMatches(message: string, keyword: string, matchType = "contains"
   return text.includes(key);
 }
 
-function isLikelyLid(value: string) {
-  const phone = clean(value);
-  return Boolean(phone && !phone.startsWith("55") && phone.length > 11);
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function randomDelay(min = 1000, max = 3000) {
+function randomDelay(min = 1000, max = 2500) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
@@ -183,14 +186,12 @@ async function getTemplateReply(
     .eq("template_id", selectedTemplate.id)
     .eq("active", true);
 
-  const reply = pickText(
+  return pickText(
     selectedTemplate.base_message,
     variations || [],
     lead,
     extra
   );
-
-  return reply || null;
 }
 
 async function getTriggeredTemplates({
@@ -204,9 +205,7 @@ async function getTriggeredTemplates({
   flowMode: "global" | "sequence";
   flowStep?: number | null;
 }) {
-  const companyIds = getCompanySearchOrder(companyId);
-
-  for (const targetCompanyId of companyIds) {
+  for (const targetCompanyId of getCompanySearchOrder(companyId)) {
     let query = supabase
       .from("message_templates")
       .select(
@@ -287,7 +286,7 @@ async function findTriggeredTemplate({
         notifyEnabled: Boolean(template.notify_enabled),
         notifyNumber: template.notify_number || null,
         notifyMessage: template.notify_message || null,
-        flowMode: template.flow_mode || "global",
+        flowMode: template.flow_mode || flowMode,
         flowStep: template.flow_step || null,
         nextStep: template.next_step || null,
         source: flowMode === "sequence" ? "sequence_trigger" : "global_trigger",
@@ -298,7 +297,7 @@ async function findTriggeredTemplate({
   return null;
 }
 
-async function sendMessage({ sessionId, number, message, lid, isLid }: any) {
+async function sendMessage({ sessionId, number, message, lid, isLid, jid }: any) {
   await sleep(randomDelay());
 
   const res = await fetch(`${WHATSAPP_SERVER}/send`, {
@@ -306,7 +305,9 @@ async function sendMessage({ sessionId, number, message, lid, isLid }: any) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       sessionId: String(sessionId),
-      number,
+      number: number || "",
+      phone: number || "",
+      jid: jid || null,
       message,
       lid,
       isLid,
@@ -321,25 +322,49 @@ async function sendMedia({
   number,
   lid,
   isLid,
+  jid,
   mediaUrl,
   mediaType,
   caption,
 }: any) {
   if (!mediaUrl) return null;
 
+  await sleep(randomDelay());
+
+  const endpoint =
+    String(mediaType || "").toLowerCase() === "audio"
+      ? "/send-audio"
+      : "/send-media";
+
+  const body =
+    endpoint === "/send-audio"
+      ? {
+          sessionId: String(sessionId),
+          number: number || "",
+          phone: number || "",
+          lid,
+          isLid,
+          jid,
+          audioUrl: mediaUrl,
+          caption: caption || "",
+        }
+      : {
+          sessionId: String(sessionId),
+          number: number || "",
+          phone: number || "",
+          lid,
+          isLid,
+          jid,
+          mediaUrl,
+          mediaType: mediaType || "document",
+          caption: caption || "",
+        };
+
   try {
-    const res = await fetch(`${WHATSAPP_SERVER}/send-media`, {
+    const res = await fetch(`${WHATSAPP_SERVER}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-  sessionId: String(sessionId),
-  number,
-  message,
-
-  lid: lid?.includes("@lid") ? lid : null,
-
-  isLid: Boolean(lid?.includes("@lid")),
-}),
+      body: JSON.stringify(body),
     });
 
     const data = await res.json().catch(() => ({}));
@@ -347,13 +372,18 @@ async function sendMedia({
     if (res.ok && data?.success !== false) {
       return data;
     }
-  } catch {}
+
+    console.error("ERRO AO ENVIAR MÍDIA:", data);
+  } catch (error) {
+    console.error("FALHA FETCH SEND MEDIA:", error);
+  }
 
   return await sendMessage({
     sessionId,
     number,
     lid,
     isLid,
+    jid,
     message: caption ? `${caption}\n\n${mediaUrl}` : mediaUrl,
   });
 }
@@ -376,6 +406,7 @@ async function sendInternalNotification({
       message,
       lid: null,
       isLid: false,
+      jid: null,
     });
   } catch (error) {
     console.error("ERRO AO ENVIAR NOTIFICAÇÃO INTERNA:", error);
@@ -501,12 +532,26 @@ async function saveSentMessage(
   }
 }
 
+function getDestination({ lead, phone, lid, remoteJid }: any) {
+  const finalLid = normalizeLid(lid || lead?.whatsapp_lid || remoteJid);
+  const finalPhone = finalLid ? "" : normalizePhone(lead?.phone || phone || "");
+
+  return {
+    number: finalPhone,
+    phone: finalPhone,
+    lid: finalLid,
+    isLid: Boolean(finalLid),
+    jid: finalLid || null,
+  };
+}
+
 async function replyAndSave({
   supabase,
   sessionId,
   phone,
   lid,
-  isLid,
+  remoteJid,
+  lead,
   leadId,
   reply,
   mediaUrl = null,
@@ -514,36 +559,40 @@ async function replyAndSave({
 }: any) {
   let result: any = null;
 
+  const destination = getDestination({ lead, phone, lid, remoteJid });
+
+  console.log("📌 Destino da resposta:", destination);
+
   if (reply) {
     result = await sendMessage({
       sessionId,
-      number: phone,
-      lid,
-      isLid,
+      ...destination,
       message: reply,
     });
+
+    if (result?.success !== false) {
+      await saveSentMessage(supabase, leadId, reply, null, "text");
+    }
   }
 
   if (mediaUrl) {
     result = await sendMedia({
       sessionId,
-      number: phone,
-      lid,
-      isLid,
+      ...destination,
       mediaUrl,
       mediaType,
       caption: "",
     });
-  }
 
-  if (result?.success !== false) {
-    await saveSentMessage(
-      supabase,
-      leadId,
-      reply || mediaUrl,
-      mediaUrl,
-      mediaType
-    );
+    if (result?.success !== false) {
+      await saveSentMessage(
+        supabase,
+        leadId,
+        mediaUrl,
+        mediaUrl,
+        mediaType || "media"
+      );
+    }
   }
 
   return result;
@@ -558,17 +607,11 @@ async function getFinalReply(
 ) {
   const currentStep = Number(lead?.current_flow_step || 1);
 
-  const globalTemplate = await findTriggeredTemplate({
-    supabase,
-    message,
-    lead,
+  console.log("🧭 Buscando resposta:", {
+    currentStep,
+    leadId: lead?.id,
     companyId,
-    flowMode: "global",
   });
-
-  if (globalTemplate?.reply || globalTemplate?.mediaUrl) {
-    return globalTemplate;
-  }
 
   const sequenceTemplate = await findTriggeredTemplate({
     supabase,
@@ -581,6 +624,18 @@ async function getFinalReply(
 
   if (sequenceTemplate?.reply || sequenceTemplate?.mediaUrl) {
     return sequenceTemplate;
+  }
+
+  const globalTemplate = await findTriggeredTemplate({
+    supabase,
+    message,
+    lead,
+    companyId,
+    flowMode: "global",
+  });
+
+  if (globalTemplate?.reply || globalTemplate?.mediaUrl) {
+    return globalTemplate;
   }
 
   const templateReply = await getTemplateReply(
@@ -630,24 +685,15 @@ export async function POST(req: Request) {
     const messageId = getIncomingMessageId(body);
 
     const rawPhone = clean(body.phone || "");
-const rawNumber = clean(body.number || "");
-
-const rawLid =
-  typeof body.lid === "string" && body.lid
-    ? body.lid.includes("@lid")
-      ? body.lid
-      : `${clean(body.lid)}@lid`
-    : null;
-
-const incomingIsLid =
-  Boolean(rawLid) ||
-  Boolean(typeof body.remoteJid === "string" && body.remoteJid.includes("@lid"));
-
-const lid = rawLid;
-
-const phone = normalizePhone(rawPhone || rawNumber);
-
+    const rawNumber = clean(body.number || "");
     const remoteJid = body.remoteJid || null;
+    const lid = normalizeLid(body.lid || remoteJid);
+    const incomingIsLid = Boolean(lid);
+
+    const phone = incomingIsLid
+      ? ""
+      : normalizePhone(rawPhone || rawNumber);
+
     const message = String(body.message || "").trim();
 
     const resolved = await resolveCompanyBySession(
@@ -702,45 +748,6 @@ const phone = normalizePhone(rawPhone || rawNumber);
       lead = result.data;
     }
 
-    /*
-if (!lead && incomingIsLid && lid) {
-  const result = await supabase
-    .from("leads")
-    .select("*")
-    .eq("company_id", companyId)
-    .eq("session_id", sessionId)
-    .in("status", [
-      "novo",
-      "enviado",
-      "respondido",
-      "interesse",
-      "pedido",
-      "campanha",
-      "reativar_futuro",
-      "finalizado",
-      "sem_interesse",
-    ])
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .order("updated_at", { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
-
-  lead = result.data;
-
-  if (lead) {
-    await supabase
-      .from("leads")
-      .update({
-        whatsapp_lid: lid,
-        remote_jid: remoteJid,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", lead.id)
-      .eq("company_id", companyId);
-  }
-}
-*/
-
     if (!lead) {
       const created = await supabase
         .from("leads")
@@ -748,7 +755,7 @@ if (!lead && incomingIsLid && lid) {
           company_id: companyId,
           branch_id: branchId,
           name: body.pushName || "Contato WhatsApp",
-          phone: phone || lid,
+          phone: phone || null,
           whatsapp_lid: lid,
           remote_jid: remoteJid,
           status: "respondido",
@@ -788,6 +795,8 @@ if (!lead && incomingIsLid && lid) {
 
     await saveReceivedMessage(supabase, lead.id, message, messageId);
 
+    const currentStep = Number(lead.current_flow_step || 1);
+
     await supabase
       .from("leads")
       .update({
@@ -800,11 +809,18 @@ if (!lead && incomingIsLid && lid) {
         last_message_at: new Date().toISOString(),
         whatsapp_lid: lid || lead.whatsapp_lid || null,
         remote_jid: remoteJid || lead.remote_jid || null,
-        current_flow_step: Number(lead.current_flow_step || 1),
+        current_flow_step: currentStep,
         updated_at: new Date().toISOString(),
       })
       .eq("id", lead.id)
       .eq("company_id", companyId);
+
+    lead = {
+      ...lead,
+      whatsapp_lid: lid || lead.whatsapp_lid || null,
+      remote_jid: remoteJid || lead.remote_jid || null,
+      current_flow_step: currentStep,
+    };
 
     if (lead.ai_paused === true) {
       return NextResponse.json({
@@ -843,17 +859,16 @@ if (!lead && incomingIsLid && lid) {
         });
       }
 
-     await replyAndSave({
-  supabase,
-  sessionId: sendSessionId,
-  phone: lid ? null : lead.phone || phone,
-  lid,
-  isLid: Boolean(lid),
-  leadId: lead.id,
-  reply: finalReply.reply,
-  mediaUrl: finalReply.mediaUrl,
-  mediaType: finalReply.mediaType,
-});
+      await replyAndSave({
+        supabase,
+        sessionId: sendSessionId,
+        phone,
+        lid,
+        remoteJid,
+        lead,
+        leadId: lead.id,
+        reply,
+      });
 
       await supabase
         .from("leads")
@@ -884,23 +899,24 @@ if (!lead && incomingIsLid && lid) {
         action: "no_template_found",
         intent,
         source: finalReply.source,
-        current_flow_step: Number(lead.current_flow_step || 1),
+        current_flow_step: currentStep,
         company_id: companyId,
         fallback_company_id: DEFAULT_COMPANY_ID,
       });
     }
 
     await replyAndSave({
-  supabase,
-  sessionId: sendSessionId,
-  phone: lid ? null : lead.phone || phone,
-  lid,
-  isLid: Boolean(lid),
-  leadId: lead.id,
-  reply: finalReply.reply,
-  mediaUrl: finalReply.mediaUrl,
-  mediaType: finalReply.mediaType,
-});
+      supabase,
+      sessionId: sendSessionId,
+      phone,
+      lid,
+      remoteJid,
+      lead,
+      leadId: lead.id,
+      reply: finalReply.reply,
+      mediaUrl: finalReply.mediaUrl,
+      mediaType: finalReply.mediaType,
+    });
 
     if (finalReply.notifyEnabled && finalReply.notifyNumber) {
       const internalMessage = applyVariables(
@@ -908,7 +924,7 @@ if (!lead && incomingIsLid && lid) {
           "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
         lead,
         {
-          phone: lid ? null : lead.phone || phone,
+          phone: lead.phone || phone,
           lastMessage: message,
         }
       );
@@ -932,7 +948,14 @@ if (!lead && incomingIsLid && lid) {
     const nextFlowStep =
       finalReply.flowMode === "sequence" && finalReply.nextStep
         ? Number(finalReply.nextStep)
-        : Number(lead.current_flow_step || 1);
+        : currentStep;
+
+    console.log("➡️ Atualizando etapa:", {
+      source: finalReply.source,
+      flowMode: finalReply.flowMode,
+      currentStep,
+      nextFlowStep,
+    });
 
     await supabase
       .from("leads")
@@ -954,12 +977,13 @@ if (!lead && incomingIsLid && lid) {
       flow_mode: finalReply.flowMode,
       flow_step: finalReply.flowStep,
       next_step: finalReply.nextStep,
+      previous_flow_step: currentStep,
       current_flow_step: nextFlowStep,
       lead_id: lead.id,
       company_id: companyId,
       fallback_company_id: DEFAULT_COMPANY_ID,
       template_company_id: (finalReply as any).companyId || companyId,
-      phone: lid ? null : lead.phone || phone,
+      phone: lead.phone || phone || "",
       lid: lid || null,
       session_id: sessionId,
       send_session_id: sendSessionId,

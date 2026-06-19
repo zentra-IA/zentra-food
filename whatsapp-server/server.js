@@ -36,6 +36,14 @@ function normalizeBrazilPhone(value) {
   return phone;
 }
 
+function normalizeLid(value) {
+  if (!value) return "";
+  const raw = String(value);
+  if (raw.includes("@lid")) return raw;
+  const cleaned = clean(raw);
+  return cleaned ? `${cleaned}@lid` : "";
+}
+
 function getCrmUrlBySession() {
   return `${ZENTRA_APP_URL}/api/whatsapp/incoming`;
 }
@@ -43,26 +51,20 @@ function getCrmUrlBySession() {
 async function resolveJid(session, payload) {
   const { number, phone, lid, jid: directJid } = payload;
 
-  // Se já veio um JID completo, usa ele
   if (directJid) {
     return String(directJid);
   }
 
-  // Prioriza telefone quando existir
-  const rawPhone = number || phone;
-  const finalPhone = normalizeBrazilPhone(rawPhone);
+  const finalLid = normalizeLid(lid);
 
-  if (finalPhone && finalPhone.startsWith("55")) {
-    return `${finalPhone}@s.whatsapp.net`;
+  if (finalLid) {
+    return finalLid;
   }
 
-  // Fallback para LID
-  if (lid) {
-    const finalLid = String(lid);
+  const finalPhone = normalizeBrazilPhone(number || phone);
 
-    return finalLid.includes("@lid")
-      ? finalLid
-      : `${clean(finalLid)}@lid`;
+  if (finalPhone) {
+    return `${finalPhone}@s.whatsapp.net`;
   }
 
   throw new Error("Telefone, LID ou JID inválido");
@@ -76,6 +78,8 @@ async function notifyCRM(payload) {
       crmUrl,
       sessionId: payload.sessionId,
       number: payload.number,
+      lid: payload.lid,
+      remoteJid: payload.remoteJid,
       message: payload.message,
     });
 
@@ -249,6 +253,7 @@ async function createSession(sessionId) {
           message: text.trim(),
           source: "whatsapp",
           product: "zentra-food",
+          messageId: msg.key?.id || null,
         });
       }
     } catch (error) {
@@ -301,9 +306,10 @@ async function createSession(sessionId) {
       if (
         statusCode === DisconnectReason.loggedOut ||
         statusCode === 440 ||
-        statusCode === 401
+        statusCode === 401 ||
+        statusCode === 403
       ) {
-        console.log(`♻️ Limpando sessão ${sessionId}...`);
+        console.log(`♻️ Limpando sessão ${sessionId} por status ${statusCode}...`);
 
         try {
           const sessionPath = path.join(
@@ -324,7 +330,6 @@ async function createSession(sessionId) {
           console.error("Erro ao limpar sessão:", error);
         }
 
-        setTimeout(() => startSession(sessionId), 3000);
         return;
       }
 
@@ -334,6 +339,75 @@ async function createSession(sessionId) {
   });
 
   return sessions[sessionId];
+}
+
+async function sendTextMessage(session, jid, message) {
+  try {
+    await session.sock.presenceSubscribe(jid);
+    await session.sock.sendPresenceUpdate("composing", jid);
+  } catch (e) {
+    console.log("⚠️ Falha no presence/composing:", e.message);
+  }
+
+  await sleep(Math.floor(Math.random() * 2000) + 1000);
+
+  const result = await session.sock.sendMessage(jid, {
+    text: message,
+  });
+
+  try {
+    await session.sock.sendPresenceUpdate("paused", jid);
+  } catch {}
+
+  return result;
+}
+
+async function sendAudioMessage(session, jid, audioUrl) {
+  try {
+    await session.sock.presenceSubscribe(jid);
+    await session.sock.sendPresenceUpdate("recording", jid);
+  } catch (e) {
+    console.log("⚠️ Falha no presence/recording:", e.message);
+  }
+
+  await sleep(Math.floor(Math.random() * 3000) + 2000);
+
+  const result = await session.sock.sendMessage(jid, {
+    audio: { url: audioUrl },
+    mimetype: "audio/ogg; codecs=opus",
+    ptt: true,
+  });
+
+  try {
+    await session.sock.sendPresenceUpdate("paused", jid);
+  } catch {}
+
+  return result;
+}
+
+async function sendMediaMessage(session, jid, mediaUrl, mediaType, caption = "") {
+  const type = String(mediaType || "document").toLowerCase();
+
+  const payload = {
+    caption: caption || "",
+  };
+
+  if (type === "image") {
+    payload.image = { url: mediaUrl };
+  } else if (type === "video") {
+    payload.video = { url: mediaUrl };
+  } else if (type === "audio") {
+    payload.audio = { url: mediaUrl };
+    payload.mimetype = "audio/ogg; codecs=opus";
+    payload.ptt = true;
+  } else {
+    payload.document = { url: mediaUrl };
+    payload.fileName = path.basename(mediaUrl.split("?")[0]) || "arquivo";
+  }
+
+  await sleep(Math.floor(Math.random() * 2000) + 1000);
+
+  return await session.sock.sendMessage(jid, payload);
 }
 
 app.post("/start/:id", async (req, res) => {
@@ -446,7 +520,7 @@ app.post("/send", async (req, res) => {
 
     const { sessionId, message } = payload;
     const finalNumber =
-      payload.number || payload.phone || payload.lid || payload.jid;
+      payload.jid || payload.lid || payload.number || payload.phone;
 
     console.log("📤 /send recebido:", {
       sessionId,
@@ -495,22 +569,7 @@ app.post("/send", async (req, res) => {
 
     console.log("🎯 JID final:", jid);
 
-    try {
-      await session.sock.presenceSubscribe(jid);
-      await session.sock.sendPresenceUpdate("composing", jid);
-    } catch (e) {
-      console.log("⚠️ Falha no presence/composing:", e.message);
-    }
-
-    await sleep(Math.floor(Math.random() * 2000) + 1000);
-
-    const result = await session.sock.sendMessage(jid, {
-      text: cleanMessage,
-    });
-
-    try {
-      await session.sock.sendPresenceUpdate("paused", jid);
-    } catch {}
+    const result = await sendTextMessage(session, jid, cleanMessage);
 
     console.log("✅ Resultado sendMessage:", result);
 
@@ -552,7 +611,16 @@ app.post("/send-audio", async (req, res) => {
 
     const { sessionId, audioUrl } = payload;
     const finalNumber =
-      payload.number || payload.phone || payload.lid || payload.jid;
+      payload.jid || payload.lid || payload.number || payload.phone;
+
+    console.log("🎧 /send-audio recebido:", {
+      sessionId,
+      number: payload.number,
+      phone: payload.phone,
+      lid: payload.lid,
+      jid: payload.jid,
+      audioUrl,
+    });
 
     if (!sessionId || !finalNumber || !audioUrl) {
       return res.status(400).json({
@@ -583,24 +651,7 @@ app.post("/send-audio", async (req, res) => {
 
     console.log("🎯 JID final áudio:", jid);
 
-    try {
-      await session.sock.presenceSubscribe(jid);
-      await session.sock.sendPresenceUpdate("recording", jid);
-    } catch (e) {
-      console.log("⚠️ Falha no presence/recording:", e.message);
-    }
-
-    await sleep(Math.floor(Math.random() * 3000) + 2000);
-
-    const result = await session.sock.sendMessage(jid, {
-      audio: { url: audioUrl },
-      mimetype: "audio/ogg; codecs=opus",
-      ptt: true,
-    });
-
-    try {
-      await session.sock.sendPresenceUpdate("paused", jid);
-    } catch {}
+    const result = await sendAudioMessage(session, jid, audioUrl);
 
     console.log("✅ Resultado sendAudio:", result);
 
@@ -627,6 +678,91 @@ app.post("/send-audio", async (req, res) => {
     });
   } catch (error) {
     console.error("Erro ao enviar áudio:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack,
+    });
+  }
+});
+
+app.post("/send-media", async (req, res) => {
+  try {
+    const payload = req.body;
+
+    const { sessionId, mediaUrl, mediaType, caption } = payload;
+    const finalNumber =
+      payload.jid || payload.lid || payload.number || payload.phone;
+
+    console.log("🖼️ /send-media recebido:", {
+      sessionId,
+      number: payload.number,
+      phone: payload.phone,
+      lid: payload.lid,
+      jid: payload.jid,
+      mediaUrl,
+      mediaType,
+      caption,
+    });
+
+    if (!sessionId || !finalNumber || !mediaUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "sessionId, number/phone/lid/jid e mediaUrl são obrigatórios",
+      });
+    }
+
+    const session = sessions[String(sessionId)];
+
+    if (!session || !session.sock) {
+      return res.status(400).json({
+        success: false,
+        error: `Sessão ${sessionId} não encontrada`,
+        activeSessions: Object.keys(sessions),
+      });
+    }
+
+    if (session.status !== "online") {
+      return res.status(400).json({
+        success: false,
+        error: `Sessão ${sessionId} offline`,
+        status: session.status,
+      });
+    }
+
+    const jid = await resolveJid(session, payload);
+
+    console.log("🎯 JID final mídia:", jid);
+
+    const result = await sendMediaMessage(
+      session,
+      jid,
+      mediaUrl,
+      mediaType,
+      caption || ""
+    );
+
+    console.log("✅ Resultado sendMedia:", result);
+
+    if (!result?.key?.id) {
+      return res.status(500).json({
+        success: false,
+        error: "WhatsApp não gerou ID da mídia",
+        jid,
+        result,
+      });
+    }
+
+    return res.json({
+      success: true,
+      jid,
+      messageId: result.key.id,
+      ack: "ignored",
+      from: session.me || session.sock.user || null,
+    });
+  } catch (error) {
+    console.error("Erro ao enviar mídia:", error);
 
     return res.status(500).json({
       success: false,
