@@ -43,19 +43,26 @@ function getCrmUrlBySession() {
 async function resolveJid(session, payload) {
   const { number, phone, lid, jid: directJid } = payload;
 
+  // Se já veio um JID completo, usa ele
   if (directJid) {
     return String(directJid);
   }
 
-  if (lid) {
-    const finalLid = String(lid);
-    return finalLid.includes("@lid") ? finalLid : `${clean(finalLid)}@lid`;
+  // Prioriza telefone quando existir
+  const rawPhone = number || phone;
+  const finalPhone = normalizeBrazilPhone(rawPhone);
+
+  if (finalPhone && finalPhone.startsWith("55")) {
+    return `${finalPhone}@s.whatsapp.net`;
   }
 
-  const finalPhone = normalizeBrazilPhone(number || phone);
+  // Fallback para LID
+  if (lid) {
+    const finalLid = String(lid);
 
-  if (finalPhone) {
-    return `${finalPhone}@s.whatsapp.net`;
+    return finalLid.includes("@lid")
+      ? finalLid
+      : `${clean(finalLid)}@lid`;
   }
 
   throw new Error("Telefone, LID ou JID inválido");
