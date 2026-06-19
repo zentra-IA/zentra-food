@@ -843,15 +843,17 @@ if (!lead && incomingIsLid && lid) {
         });
       }
 
-      await replyAndSave({
-        supabase,
-        sessionId: sendSessionId,
-        phone: lead.phone || phone,
-        lid,
-        isLid: incomingIsLid,
-        leadId: lead.id,
-        reply,
-      });
+     await replyAndSave({
+  supabase,
+  sessionId: sendSessionId,
+  phone: lid ? null : lead.phone || phone,
+  lid,
+  isLid: Boolean(lid),
+  leadId: lead.id,
+  reply: finalReply.reply,
+  mediaUrl: finalReply.mediaUrl,
+  mediaType: finalReply.mediaType,
+});
 
       await supabase
         .from("leads")
@@ -889,16 +891,16 @@ if (!lead && incomingIsLid && lid) {
     }
 
     await replyAndSave({
-      supabase,
-      sessionId: sendSessionId,
-      phone: lead.phone || phone,
-      lid,
-      isLid: incomingIsLid,
-      leadId: lead.id,
-      reply: finalReply.reply,
-      mediaUrl: finalReply.mediaUrl,
-      mediaType: finalReply.mediaType,
-    });
+  supabase,
+  sessionId: sendSessionId,
+  phone: lid ? null : lead.phone || phone,
+  lid,
+  isLid: Boolean(lid),
+  leadId: lead.id,
+  reply: finalReply.reply,
+  mediaUrl: finalReply.mediaUrl,
+  mediaType: finalReply.mediaType,
+});
 
     if (finalReply.notifyEnabled && finalReply.notifyNumber) {
       const internalMessage = applyVariables(
@@ -906,7 +908,7 @@ if (!lead && incomingIsLid && lid) {
           "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
         lead,
         {
-          phone: lead.phone || phone,
+          phone: lid ? null : lead.phone || phone,
           lastMessage: message,
         }
       );
@@ -957,7 +959,7 @@ if (!lead && incomingIsLid && lid) {
       company_id: companyId,
       fallback_company_id: DEFAULT_COMPANY_ID,
       template_company_id: (finalReply as any).companyId || companyId,
-      phone: lead.phone || phone,
+      phone: lid ? null : lead.phone || phone,
       lid: lid || null,
       session_id: sessionId,
       send_session_id: sendSessionId,
