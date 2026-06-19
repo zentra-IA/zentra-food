@@ -352,54 +352,58 @@ export default function ContactsPage() {
   }
 
   async function dispararLeads() {
-    const novos = leads.filter((lead) => {
-      const campaignStatus = lead.campaign_status || "";
-      return campaignStatus !== "pending" && campaignStatus !== "processing" && campaignStatus !== "sent";
-    });
+  const novos = leads.filter((lead) => {
+    const campaignStatus = String(lead.campaign_status || "").toLowerCase();
 
-    if (!novos.length) {
-      alert("Nenhum contato disponível para novo disparo.");
-      return;
-    }
+    return (
+      campaignStatus !== "processing" &&
+      campaignStatus !== "sent"
+    );
+  });
 
-    if (!confirm(`Colocar ${novos.length} contatos na fila com distribuição inteligente?`)) return;
+  if (!novos.length) {
+    alert("Nenhum contato disponível para novo disparo.");
+    return;
+  }
 
-    try {
-      setLoading(true);
+  if (!confirm(`Colocar ${novos.length} contatos na fila com distribuição inteligente?`)) return;
 
-      let total = 0;
+  try {
+    setLoading(true);
 
-      for (const lead of novos) {
-        const res = await fetch("/api/crm/queue", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            lead_id: lead.id,
-            intent: "OPENING",
-            session_id: 0,
-          }),
-        });
+    let total = 0;
 
-        const data = await res.json().catch(() => ({}));
+    for (const lead of novos) {
+      const res = await fetch("/api/crm/queue", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: lead.id,
+          intent: "OPENING",
+          session_id: 0,
+        }),
+      });
 
-        if (!res.ok) {
-          console.error("Erro ao colocar lead na fila:", data);
-          continue;
-        }
+      const data = await res.json().catch(() => ({}));
 
-        total++;
+      if (!res.ok) {
+        console.error("Erro ao colocar lead na fila:", data);
+        continue;
       }
 
-      alert(`${total} contatos colocados na fila inteligente.`);
-      await loadLeads();
-      await loadSessionStats();
-    } catch (error: any) {
-      alert(error.message || "Erro no disparo em massa");
-    } finally {
-      setLoading(false);
+      total++;
     }
+
+    alert(`${total} contatos colocados na fila inteligente.`);
+    await loadLeads();
+    await loadSessionStats();
+  } catch (error: any) {
+    alert(error.message || "Erro no disparo em massa");
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
