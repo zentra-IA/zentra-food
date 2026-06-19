@@ -129,25 +129,18 @@ function applyVariables(text: string, lead: any, extra: any = {}) {
 }
 
 function pickText(baseMessage: string, variations: any[], lead: any, extra: any) {
-  const base = String(baseMessage || "").trim();
-
-  const validVariations = (variations || [])
-    .map((v: any) => String(v?.content || "").trim())
+  const options = [
+    baseMessage,
+    ...(variations?.map((v: any) => v.content) || []),
+  ]
+    .map((item) => String(item || "").trim())
     .filter(Boolean);
 
-  // Se tiver variações, escolhe uma variação como complemento da mensagem principal.
-  // Assim não perde o texto principal.
-  const variation =
-    validVariations.length > 0
-      ? validVariations[Math.floor(Math.random() * validVariations.length)]
-      : "";
+  if (!options.length) return "";
 
-  const finalText = [base, variation]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
+  const selected = options[Math.floor(Math.random() * options.length)];
 
-  return applyVariables(finalText, lead, extra);
+  return applyVariables(selected, lead, extra);
 }
 
 async function getTemplateReply(
@@ -404,7 +397,13 @@ async function sendInternalNotification({
   if (!number || !message) return null;
 
   try {
-    return await sendMessage({
+    console.log("🔔 Preparando notificação interna:", {
+      sessionId,
+      number,
+      message,
+    });
+
+    const result = await sendMessage({
       sessionId,
       number: normalizePhone(number),
       message,
@@ -412,6 +411,10 @@ async function sendInternalNotification({
       isLid: false,
       jid: null,
     });
+
+    console.log("🔔 Resultado notificação interna:", result);
+
+    return result;
   } catch (error) {
     console.error("ERRO AO ENVIAR NOTIFICAÇÃO INTERNA:", error);
     return null;
@@ -694,10 +697,7 @@ export async function POST(req: Request) {
     const lid = normalizeLid(body.lid || remoteJid);
     const incomingIsLid = Boolean(lid);
 
-    const phone = incomingIsLid
-      ? ""
-      : normalizePhone(rawPhone || rawNumber);
-
+    const phone = incomingIsLid ? "" : normalizePhone(rawPhone || rawNumber);
     const message = String(body.message || "").trim();
 
     const resolved = await resolveCompanyBySession(
@@ -923,30 +923,30 @@ export async function POST(req: Request) {
     });
 
     if (finalReply.notifyEnabled && finalReply.notifyNumber) {
-  const internalMessage = applyVariables(
-    finalReply.notifyMessage ||
-      "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
-    lead,
-    {
-      phone: lead.phone || phone,
-      lastMessage: message,
+      const internalMessage = applyVariables(
+        finalReply.notifyMessage ||
+          "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
+        lead,
+        {
+          phone: lead.phone || phone || lid || "",
+          lastMessage: message,
+        }
+      );
+
+      console.log("🔔 Enviando notificação interna:", {
+        sessionId: sendSessionId,
+        notifyNumber: finalReply.notifyNumber,
+        internalMessage,
+      });
+
+      const notifyResult = await sendInternalNotification({
+        sessionId: sendSessionId,
+        number: finalReply.notifyNumber,
+        message: internalMessage,
+      });
+
+      console.log("🔔 Resultado final notificação interna:", notifyResult);
     }
-  );
-
-  console.log("🔔 Enviando notificação interna:", {
-    sessionId: sendSessionId,
-    notifyNumber: finalReply.notifyNumber,
-    internalMessage,
-  });
-
-  const notifyResult = await sendInternalNotification({
-    sessionId: sendSessionId,
-    number: finalReply.notifyNumber,
-    message: internalMessage,
-  });
-
-  console.log("🔔 Resultado notificação interna:", notifyResult);
-}
 
     const fallbackStatus =
       intent === "PEDIDO"
