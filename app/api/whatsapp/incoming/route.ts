@@ -332,14 +332,14 @@ async function sendMedia({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sessionId: String(sessionId),
-        number,
-        lid,
-        isLid,
-        mediaUrl,
-        mediaType,
-        caption: caption || "",
-      }),
+  sessionId: String(sessionId),
+  number,
+  message,
+
+  lid: lid?.includes("@lid") ? lid : null,
+
+  isLid: Boolean(lid?.includes("@lid")),
+}),
     });
 
     const data = await res.json().catch(() => ({}));
@@ -631,10 +631,12 @@ export async function POST(req: Request) {
 
     const rawPhone = clean(body.phone || "");
     const rawNumber = clean(body.number || "");
-    const rawLid = body.lid ? clean(body.lid) : null;
-
-    const incomingIsLid = Boolean(body.isLid) || isLikelyLid(rawNumber);
-    const lid = rawLid || (incomingIsLid ? rawNumber : null);
+    const rawLid =
+  typeof body.lid === "string" && body.lid.includes("@lid")
+    ? body.lid
+    : null;
+   const incomingIsLid = Boolean(rawLid);
+    const lid = rawLid;
 
     const phone = incomingIsLid
       ? normalizePhone(rawPhone)
