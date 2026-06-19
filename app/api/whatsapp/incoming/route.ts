@@ -702,42 +702,44 @@ const phone = normalizePhone(rawPhone || rawNumber);
       lead = result.data;
     }
 
-    if (!lead && incomingIsLid && lid) {
-      const result = await supabase
-        .from("leads")
-        .select("*")
-        .eq("company_id", companyId)
-        .eq("session_id", sessionId)
-        .in("status", [
-          "novo",
-          "enviado",
-          "respondido",
-          "interesse",
-          "pedido",
-          "campanha",
-          "reativar_futuro",
-          "finalizado",
-          "sem_interesse",
-        ])
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .order("updated_at", { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
+    /*
+if (!lead && incomingIsLid && lid) {
+  const result = await supabase
+    .from("leads")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("session_id", sessionId)
+    .in("status", [
+      "novo",
+      "enviado",
+      "respondido",
+      "interesse",
+      "pedido",
+      "campanha",
+      "reativar_futuro",
+      "finalizado",
+      "sem_interesse",
+    ])
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
 
-      lead = result.data;
+  lead = result.data;
 
-      if (lead) {
-        await supabase
-          .from("leads")
-          .update({
-            whatsapp_lid: lid,
-            remote_jid: remoteJid,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", lead.id)
-          .eq("company_id", companyId);
-      }
-    }
+  if (lead) {
+    await supabase
+      .from("leads")
+      .update({
+        whatsapp_lid: lid,
+        remote_jid: remoteJid,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", lead.id)
+      .eq("company_id", companyId);
+  }
+}
+*/
 
     if (!lead) {
       const created = await supabase
