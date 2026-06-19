@@ -46,8 +46,8 @@ async function resolveJid(session, payload) {
   if (directJid) return directJid;
 
   if (isLid && lid) {
-    return `${clean(lid)}@lid`;
-  }
+  return lid;
+}
 
   const finalPhone = normalizeBrazilPhone(number || phone);
 
@@ -225,13 +225,13 @@ async function createSession(sessionId) {
         const senderJid = participant || remoteJid;
         const isLid = senderJid.includes("@lid");
 
-        const phoneFromJid = senderJid.includes("@s.whatsapp.net")
-          ? clean(senderJid.replace("@s.whatsapp.net", ""))
-          : null;
+       const lidFromJid = senderJid.includes("@lid")
+  ? senderJid
+  : null;
 
         const lidFromJid = senderJid.includes("@lid")
-          ? clean(senderJid.replace("@lid", ""))
-          : null;
+  ? senderJid
+  : null;
 
         const pushName = msg.pushName || "";
         const number = phoneFromJid || lidFromJid || clean(senderJid);
@@ -243,17 +243,17 @@ async function createSession(sessionId) {
         if (!text || !text.trim()) continue;
 
         await notifyCRM({
-          sessionId,
-          number,
-          phone: phoneFromJid,
-          lid: lidFromJid,
-          isLid,
-          remoteJid: senderJid,
-          pushName,
-          message: text.trim(),
-          source: "whatsapp",
-          product: "zentra-food",
-        });
+  sessionId,
+  number,
+  phone: phoneFromJid,
+  lid: lidFromJid,
+  isLid,
+  remoteJid: senderJid,
+  pushName,
+  message: text.trim(),
+  source: "whatsapp",
+  product: "zentra-food",
+});
       }
     } catch (error) {
       console.error("Erro ao processar mensagem:", error);
