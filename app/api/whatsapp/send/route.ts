@@ -5,11 +5,11 @@ import { getCompanyId } from "@/lib/server-company";
 const WHATSAPP_SERVER =
   process.env.NEXT_PUBLIC_WHATSAPP_SERVER || "http://localhost:3011";
 
-function clean(value: string) {
+function clean(value: any) {
   return String(value || "").replace(/\D/g, "");
 }
 
-function normalizePhone(value: string) {
+function normalizePhone(value: any) {
   const phone = clean(value);
   if (!phone) return "";
   if (phone.startsWith("55")) return phone;
@@ -17,8 +17,16 @@ function normalizePhone(value: string) {
   return phone;
 }
 
-function buildSession(companyId: string, sessionId: string) {
-  return `${companyId}_${sessionId}`;
+function normalizeLid(value: any) {
+  if (!value) return null;
+  const raw = String(value);
+  if (raw.includes("@lid")) return raw;
+  const cleaned = clean(raw);
+  return cleaned ? `${cleaned}@lid` : null;
+}
+
+function buildSession(companyId: string, sessionId: string | number) {
+  return `${companyId}_${sessionId || 1}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -26,54 +34,46 @@ export async function POST(req: NextRequest) {
     const companyId =
       getCompanyId(req) ||
       process.env.DEFAULT_COMPANY_ID ||
-      "b7336aa2-345d-4624-8141-0ea0de084c3d";
+      "41edd938-3eb4-420e-9675-2e53703ed70b";
 
     const body = await req.json();
 
-    const { contactId, message, sessionId } = body;
+    const contactId = body.contactId || body.leadId || body.id;
+    const message = String(body.message || "").trim();
+    const sessionId = body.sessionId || body.session_id || "1";
 
     if (!contactId || !message) {
       return NextResponse.json(
-        { success: false, error: "contactId e message obrigatórios" },
+        { success: false, error: "contactId/leadId e message obrigatórios" },
         { status: 400 }
       );
     }
 
-    const { data: contact, error } = await supabase
-      .from("contacts")
+    const { data: lead, error } = await supabase
+      .from("leads")
       .select("*")
       .eq("id", contactId)
       .eq("company_id", companyId)
-      .single();
+      .maybeSingle();
 
-    if (error || !contact) {
+    if (error || !lead) {
       return NextResponse.json(
-        { success: false, error: "Contato não encontrado nesta empresa" },
+        { success: false, error: "Lead não encontrado nesta empresa" },
         { status: 404 }
       );
     }
 
-    const rawSession =
-      sessionId ||
-      contact.session_id ||
-      contact.whatsapp_session ||
-      contact.sessionId ||
-      "1";
+    const finalSession = buildSession(
+      companyId,
+      sessionId || lead.session_id || 1
+    );
 
-    const finalSession = buildSession(companyId, String(rawSession));
+    const lid = normalizeLid(lead.whatsapp_lid || lead.remote_jid);
+    const phone = lid ? "" : normalizePhone(lead.phone || "");
 
-    const phone =
-      contact.telefone ||
-      contact.phone ||
-      contact.number ||
-      contact.whatsapp ||
-      "";
-
-    const cleanPhone = normalizePhone(phone);
-
-    if (!cleanPhone) {
+    if (!phone && !lid) {
       return NextResponse.json(
-        { success: false, error: "Contato sem telefone" },
+        { success: false, error: "Lead sem telefone ou LID válido" },
         { status: 400 }
       );
     }
@@ -85,7 +85,10 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         sessionId: finalSession,
-        number: cleanPhone,
+        number: phone,
+        phone,
+        lid,
+        jid: lid,
         message,
       }),
     });
@@ -104,26 +107,35 @@ export async function POST(req: NextRequest) {
     }
 
     await supabase.from("messages").insert({
-      company_id: companyId,
-      contact_id: contact.id,
+      lead_id: lead.id,
       direction: "sent",
+      topic: "whatsapp",
+      extension: "text",
       content: message,
+      event: "manual_message_sent",
+      payload: {
+        jid: result.jid || null,
+        message_id: result.messageId || null,
+      },
       created_at: new Date().toISOString(),
     });
 
     await supabase
-      .from("contacts")
+      .from("leads")
       .update({
-        status: "abordado",
+        status: lead.status === "novo" ? "respondido" : lead.status,
+        last_message: message,
         last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
-      .eq("id", contact.id)
+      .eq("id", lead.id)
       .eq("company_id", companyId);
 
     return NextResponse.json({
       success: true,
-      sessionId: rawSession,
-      phone: cleanPhone,
+      sessionId: finalSession,
+      phone,
+      lid,
       result,
     });
   } catch (error: any) {
