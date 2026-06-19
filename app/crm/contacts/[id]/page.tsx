@@ -25,7 +25,7 @@ export default function ContactDetailPage() {
     setPageLoading(true);
 
     const { data: contactData } = await supabase
-      .from("contacts")
+      .from("leads")
       .select("*")
       .eq("id", id)
       .single();
@@ -33,7 +33,7 @@ export default function ContactDetailPage() {
     const { data: messagesData } = await supabase
       .from("messages")
       .select("*")
-      .eq("contact_id", id)
+      .eq("lead_id", id)
       .order("created_at", { ascending: true });
 
     setContact(contactData);
@@ -45,7 +45,7 @@ export default function ContactDetailPage() {
     setLoading(true);
 
     const { error } = await supabase
-      .from("contacts")
+      .from("leads")
       .update({
         ai_paused: false,
         conversation_stage: "discovering_objection",
@@ -69,7 +69,7 @@ export default function ContactDetailPage() {
     setLoading(true);
 
     const { error } = await supabase
-      .from("contacts")
+      .from("leads")
       .update({
         ai_paused: true,
         conversation_stage: "human_handoff",
@@ -93,7 +93,7 @@ export default function ContactDetailPage() {
     setLoading(true);
 
     const { error } = await supabase
-      .from("contacts")
+      .from("leads")
       .update({
         ai_paused: false,
         conversation_stage: "new",
@@ -119,7 +119,7 @@ export default function ContactDetailPage() {
     setLoading(true);
 
     const { error } = await supabase
-      .from("contacts")
+      .from("leads")
       .update({
         ai_paused: true,
         conversation_stage: "human_handoff",
@@ -248,18 +248,18 @@ export default function ContactDetailPage() {
       }
 
       await supabase.from("ai_classifications").insert({
-        contact_id: id,
+        lead_id: id,
         classification: result,
       });
 
       await supabase.from("messages").insert({
-        contact_id: id,
+        lead_id: id,
         direction: "received",
         content: message,
       });
 
       await supabase
-        .from("contacts")
+        .from("leads")
         .update({
           status: newStatus,
           is_blacklisted: isBlacklisted,
@@ -271,7 +271,7 @@ export default function ContactDetailPage() {
 
       if (nextMessageType) {
         await supabase.from("automation_queue").insert({
-          contact_id: id,
+          lead_id: id,
           message_type: nextMessageType,
           scheduled_at: new Date().toISOString(),
           status: "pending",
