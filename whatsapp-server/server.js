@@ -41,34 +41,24 @@ function getCrmUrlBySession() {
 }
 
 async function resolveJid(session, payload) {
-  const { number, phone, lid, isLid, jid: directJid } = payload;
+  const { number, phone, lid, jid: directJid } = payload;
 
-  if (directJid) return directJid;
+  if (directJid) {
+    return String(directJid);
+  }
 
-  if (isLid && lid) {
-  return lid;
-}
+  if (lid) {
+    const finalLid = String(lid);
+    return finalLid.includes("@lid") ? finalLid : `${clean(finalLid)}@lid`;
+  }
 
   const finalPhone = normalizeBrazilPhone(number || phone);
 
   if (finalPhone) {
-    const baseJid = `${finalPhone}@s.whatsapp.net`;
-
-    try {
-      const result = await session.sock.onWhatsApp(finalPhone);
-      const found = Array.isArray(result) ? result[0] : null;
-
-      if (found?.exists && found?.jid) return found.jid;
-
-      return baseJid;
-    } catch (error) {
-      return baseJid;
-    }
+    return `${finalPhone}@s.whatsapp.net`;
   }
 
-  if (lid) return `${clean(lid)}@lid`;
-
-  throw new Error("Telefone ou LID inválido");
+  throw new Error("Telefone, LID ou JID inválido");
 }
 
 async function notifyCRM(payload) {
@@ -222,38 +212,37 @@ async function createSession(sessionId) {
         if (msg.message.protocolMessage) continue;
 
         const participant = msg.key?.participant || "";
-const senderJid = participant || remoteJid;
-const isLid = senderJid.includes("@lid");
+        const senderJid = participant || remoteJid;
 
-const phoneFromJid = senderJid.includes("@s.whatsapp.net")
-  ? clean(senderJid.replace("@s.whatsapp.net", ""))
-  : null;
+        const isLid = senderJid.includes("@lid");
 
-const lidFromJid = senderJid.includes("@lid")
-  ? senderJid
-  : null;
+        const phoneFromJid = senderJid.includes("@s.whatsapp.net")
+          ? clean(senderJid.replace("@s.whatsapp.net", ""))
+          : null;
 
-const pushName = msg.pushName || "";
-const number = phoneFromJid || clean(senderJid);
+        const lidFromJid = senderJid.includes("@lid") ? senderJid : null;
 
-        if (!number) continue;
+        const pushName = msg.pushName || "";
+        const number = phoneFromJid || clean(senderJid);
+
+        if (!number && !lidFromJid) continue;
 
         const text = extractMessageText(msg.message);
 
         if (!text || !text.trim()) continue;
 
         await notifyCRM({
-  sessionId,
-  number,
-  phone: phoneFromJid,
-  lid: lidFromJid,
-  isLid,
-  remoteJid: senderJid,
-  pushName,
-  message: text.trim(),
-  source: "whatsapp",
-  product: "zentra-food",
-});
+          sessionId,
+          number,
+          phone: phoneFromJid,
+          lid: lidFromJid,
+          isLid,
+          remoteJid: senderJid,
+          pushName,
+          message: text.trim(),
+          source: "whatsapp",
+          product: "zentra-food",
+        });
       }
     } catch (error) {
       console.error("Erro ao processar mensagem:", error);
@@ -584,6 +573,8 @@ app.post("/send-audio", async (req, res) => {
     }
 
     const jid = await resolveJid(session, payload);
+
+    console.log("🎯 JID final áudio:", jid);
 
     try {
       await session.sock.presenceSubscribe(jid);
