@@ -630,17 +630,22 @@ export async function POST(req: Request) {
     const messageId = getIncomingMessageId(body);
 
     const rawPhone = clean(body.phone || "");
-    const rawNumber = clean(body.number || "");
-    const rawLid =
-  typeof body.lid === "string" && body.lid.includes("@lid")
-    ? body.lid
-    : null;
-   const incomingIsLid = Boolean(rawLid);
-    const lid = rawLid;
+const rawNumber = clean(body.number || "");
 
-    const phone = incomingIsLid
-      ? normalizePhone(rawPhone)
-      : normalizePhone(rawPhone || rawNumber);
+const rawLid =
+  typeof body.lid === "string" && body.lid
+    ? body.lid.includes("@lid")
+      ? body.lid
+      : `${clean(body.lid)}@lid`
+    : null;
+
+const incomingIsLid =
+  Boolean(rawLid) ||
+  Boolean(typeof body.remoteJid === "string" && body.remoteJid.includes("@lid"));
+
+const lid = rawLid;
+
+const phone = normalizePhone(rawPhone || rawNumber);
 
     const remoteJid = body.remoteJid || null;
     const message = String(body.message || "").trim();
@@ -951,7 +956,7 @@ export async function POST(req: Request) {
       fallback_company_id: DEFAULT_COMPANY_ID,
       template_company_id: (finalReply as any).companyId || companyId,
       phone: lead.phone || phone,
-      lid,
+      lid: lid || null,
       session_id: sessionId,
       send_session_id: sendSessionId,
       kanban_status: nextStatus,
