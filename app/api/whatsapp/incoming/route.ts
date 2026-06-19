@@ -129,21 +129,25 @@ function applyVariables(text: string, lead: any, extra: any = {}) {
 }
 
 function pickText(baseMessage: string, variations: any[], lead: any, extra: any) {
-  const options = [
-    baseMessage,
-    ...(variations?.map((v: any) => v.content) || []),
-  ]
-    .map((item) => String(item || "").trim())
+  const base = String(baseMessage || "").trim();
+
+  const validVariations = (variations || [])
+    .map((v: any) => String(v?.content || "").trim())
+    .filter(Boolean);
+
+  // Se tiver variações, escolhe uma variação como complemento da mensagem principal.
+  // Assim não perde o texto principal.
+  const variation =
+    validVariations.length > 0
+      ? validVariations[Math.floor(Math.random() * validVariations.length)]
+      : "";
+
+  const finalText = [base, variation]
     .filter(Boolean)
-    .filter((item, index, array) => array.indexOf(item) === index);
+    .join("\n\n")
+    .trim();
 
-  if (!options.length) return "";
-
-  return applyVariables(
-    options[Math.floor(Math.random() * options.length)],
-    lead,
-    extra
-  );
+  return applyVariables(finalText, lead, extra);
 }
 
 async function getTemplateReply(
@@ -919,22 +923,30 @@ export async function POST(req: Request) {
     });
 
     if (finalReply.notifyEnabled && finalReply.notifyNumber) {
-      const internalMessage = applyVariables(
-        finalReply.notifyMessage ||
-          "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
-        lead,
-        {
-          phone: lead.phone || phone,
-          lastMessage: message,
-        }
-      );
-
-      await sendInternalNotification({
-        sessionId: sendSessionId,
-        number: finalReply.notifyNumber,
-        message: internalMessage,
-      });
+  const internalMessage = applyVariables(
+    finalReply.notifyMessage ||
+      "🚨 Novo atendimento\n\nCliente: {nome}\nTelefone: {telefone}\n\nÚltima mensagem:\n{ultima_mensagem}\n\nAbrir conversa:\n{link_whatsapp}",
+    lead,
+    {
+      phone: lead.phone || phone,
+      lastMessage: message,
     }
+  );
+
+  console.log("🔔 Enviando notificação interna:", {
+    sessionId: sendSessionId,
+    notifyNumber: finalReply.notifyNumber,
+    internalMessage,
+  });
+
+  const notifyResult = await sendInternalNotification({
+    sessionId: sendSessionId,
+    number: finalReply.notifyNumber,
+    message: internalMessage,
+  });
+
+  console.log("🔔 Resultado notificação interna:", notifyResult);
+}
 
     const fallbackStatus =
       intent === "PEDIDO"
