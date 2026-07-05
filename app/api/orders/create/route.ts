@@ -23,23 +23,27 @@ async function resolveBranchId(req: NextRequest, companyId: string) {
   const cookieBranchId = getBranchId(req);
 
   if (cookieBranchId) {
+    console.log("COOKIE BRANCH:", cookieBranchId);
     return cookieBranchId;
   }
+
+  console.log("DATABASE URL:", process.env.DATABASE_URL);
+  console.log("COMPANY:", companyId);
+
+  const branches = await prisma.branches.findMany();
+
+  console.log("TODAS AS FILIAIS:", branches);
 
   const branch = await prisma.branches.findFirst({
     where: {
       company_id: companyId,
       active: true,
     },
-    orderBy: {
-      created_at: "asc",
-    },
-    select: {
-      id: true,
-    },
   });
 
-  if (!branch?.id) {
+  console.log("FILIAL ENCONTRADA:", branch);
+
+  if (!branch) {
     throw new Error(`Filial padrão não encontrada para companyId: ${companyId}`);
   }
 
