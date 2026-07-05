@@ -233,8 +233,12 @@ export default function CheckoutPage() {
             : [],
         };
       });
+const activeCompanyId =
+  localStorage.getItem("active_company_id") ||
+  "47372c84-caa1-4612-a98f-20579116c6ef";
 
       const payload = {
+companyId: activeCompanyId,
         customer: {
           name: customerName.trim(),
           whatsapp: customerWhatsapp.trim(),
@@ -260,9 +264,7 @@ export default function CheckoutPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-company-id":
-            localStorage.getItem("active_company_id") ||
-            "b7336aa2-345d-4624-8141-0ea0de084c3d",
+          "x-company-id": activeCompanyId,
         },
         body: JSON.stringify(payload),
       });
