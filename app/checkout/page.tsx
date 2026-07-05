@@ -278,8 +278,8 @@ companyId: activeCompanyId,
       }
 
       localStorage.removeItem("cart");
-      alert("Pedido enviado com sucesso!");
-      window.location.href = "/";
+alert("Pedido enviado com sucesso!");
+window.location.href = "/cardapio";
     } catch (error) {
       console.error("Erro ao finalizar pedido:", error);
       alert("Erro ao finalizar pedido");
