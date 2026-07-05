@@ -235,7 +235,7 @@ export default function CheckoutPage() {
       });
 const activeCompanyId =
   localStorage.getItem("active_company_id") ||
-  "47372c84-caa1-4612-a98f-20579116c6ef";
+  "47372c84-caa1-4612-a98f-20579116e0ef";
 
       const payload = {
 companyId: activeCompanyId,
