@@ -22,15 +22,25 @@ function normalizeBrazilPhone(phone: string) {
 async function resolveBranchId(req: NextRequest, companyId: string) {
   const cookieBranchId = getBranchId(req);
 
-  if (cookieBranchId) return cookieBranchId;
+  if (cookieBranchId) {
+    return cookieBranchId;
+  }
 
   const branch = await prisma.branches.findFirst({
-    where: { company_id: companyId },
-    select: { id: true },
+    where: {
+      company_id: companyId,
+      active: true,
+    },
+    orderBy: {
+      created_at: "asc",
+    },
+    select: {
+      id: true,
+    },
   });
 
   if (!branch?.id) {
-    throw new Error("Filial padrão não encontrada");
+    throw new Error(`Filial padrão não encontrada para companyId: ${companyId}`);
   }
 
   return branch.id;
@@ -135,9 +145,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const companyId =
-      getCompanyId(req) ||
-      process.env.DEFAULT_COMPANY_ID ||
-      "b7336aa2-345d-4624-8141-0ea0de084c3d";
+  body?.companyId ||
+  req.headers.get("x-company-id") ||
+  getCompanyId(req) ||
+  process.env.DEFAULT_COMPANY_ID;
+
+if (!companyId) {
+  return NextResponse.json(
+    { error: "Empresa não identificada no pedido" },
+    { status: 400 }
+  );
+}
 
     const branchId = await resolveBranchId(req, companyId);
 
