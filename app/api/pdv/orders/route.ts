@@ -128,20 +128,19 @@ async function sendToCrm({
   }
 
   return prisma.leads.create({
-    data: {
-      company_id: companyId,
-      branch_id: branchId,
-      name: name || mainLead.name,
-  email: email || mainLead.email,
-  phone: cleanPhone,
-  status: "finalizado",
-  conversation_stage: "finalizado",
-  last_message: message,
-  last_message_at: new Date(),
-  updated_at: new Date(),
-},
-  });
-}
+  data: {
+    company_id: companyId,
+    branch_id: branchId,
+    name: name || "Cliente PDV",
+    phone: cleanPhone,
+    email: email || null,
+    status: "finalizado",
+    conversation_stage: "finalizado",
+    last_message: message,
+    last_message_at: new Date(),
+    opening_sent: true,
+  },
+});
 
 export async function POST(req: NextRequest) {
   try {
