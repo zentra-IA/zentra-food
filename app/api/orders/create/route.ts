@@ -35,13 +35,21 @@ async function resolveBranchId(req: NextRequest, companyId: string) {
   console.log("TODAS AS FILIAIS:", branches);
 
   const branch = await prisma.branches.findFirst({
-    where: {
-      company_id: companyId,
-      active: true,
-    },
-  });
+  where: {
+    company_id: companyId,
+  },
+});
 
-  console.log("FILIAL ENCONTRADA:", branch);
+console.log("COMPANY RECEBIDA:", companyId);
+console.log("FILIAL ENCONTRADA:", branch);
+
+const branches = await prisma.branches.findMany({
+  where: {
+    company_id: companyId,
+  },
+});
+
+console.log("FILIAIS DA EMPRESA:", branches);
 
   if (!branch) {
     throw new Error(`Filial padrão não encontrada para companyId: ${companyId}`);
