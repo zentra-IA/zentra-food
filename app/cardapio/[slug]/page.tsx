@@ -169,6 +169,8 @@ export default function HomePage() {
   useEffect(() => {
     if (!slug) return;
 
+localStorage.setItem("last_menu_url", window.location.href);
+
     loadData();
 
     const savedCart = localStorage.getItem("cart");

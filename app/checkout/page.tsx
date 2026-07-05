@@ -277,9 +277,14 @@ companyId: activeCompanyId,
         return;
       }
 
-      localStorage.removeItem("cart");
+     const returnUrl =
+  localStorage.getItem("last_menu_url") ||
+  document.referrer ||
+  "/";
+
+localStorage.removeItem("cart");
 alert("Pedido enviado com sucesso!");
-window.location.href = "/cardapio";
+window.location.href = returnUrl;
     } catch (error) {
       console.error("Erro ao finalizar pedido:", error);
       alert("Erro ao finalizar pedido");
