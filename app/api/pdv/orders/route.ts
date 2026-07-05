@@ -141,6 +141,7 @@ async function sendToCrm({
     opening_sent: true,
   },
 });
+}
 
 export async function POST(req: NextRequest) {
   try {
