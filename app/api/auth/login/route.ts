@@ -81,14 +81,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: branch } = await supabase
-      .from("branches")
-      .select("id")
-      .eq("company_id", companyUser.company_id)
-      .eq("active", true)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    let { data: branch } = await supabase
+  .from("branches")
+  .select("id")
+  .eq("company_id", companyUser.company_id)
+  .eq("active", true)
+  .order("created_at", { ascending: true })
+  .limit(1)
+  .maybeSingle();
+
+if (!branch?.id) {
+  const { data: createdBranch, error: branchCreateError } = await supabase
+    .from("branches")
+    .insert({
+      company_id: companyUser.company_id,
+      name: "Matriz",
+      slug: "matriz",
+      active: true,
+    })
+    .select("id")
+    .single();
+
+  if (branchCreateError || !createdBranch?.id) {
+    throw new Error(branchCreateError?.message || "Erro ao criar filial padrão");
+  }
+
+  branch = createdBranch;
+}
 
     const role = companyUser.role || "atendente";
 
