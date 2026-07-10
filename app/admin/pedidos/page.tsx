@@ -129,6 +129,7 @@ function formatBRL(value: number) {
 export default function PedidosPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+const [companyName, setCompanyName] = useState("Estabelecimento");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("HOJE");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("TODOS");
   const [search, setSearch] = useState("");
@@ -187,6 +188,7 @@ export default function PedidosPage() {
   useEffect(() => {
     loadOrders();
     loadDrivers();
+loadCompany();
 
     const interval = setInterval(async () => {
       try {
@@ -229,7 +231,32 @@ export default function PedidosPage() {
 
     return diffMinutes >= DELAY_MINUTES;
   }
+async function loadCompany() {
+  try {
+    const response = await fetch("/api/company/current", {
+      cache: "no-store",
+      credentials: "include",
+    });
 
+    const data = await response.json();
+
+    if (!response.ok || !data?.success) {
+      console.error(
+        "Erro ao carregar empresa:",
+        data?.error || "Resposta inválida"
+      );
+      return;
+    }
+
+    const name = String(data?.company?.name || "").trim();
+
+    if (name) {
+      setCompanyName(name);
+    }
+  } catch (error) {
+    console.error("Erro ao carregar nome da empresa:", error);
+  }
+}
   async function loadOrders() {
     try {
       const res = await fetch("/api/orders/list", { cache: "no-store" });
@@ -371,60 +398,469 @@ export default function PedidosPage() {
   }
 
   function printOrder(order: Order) {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+  const printWindow = window.open("", "_blank");
 
-    const orderTotal = getOrderTotal(order);
-
-    const itemsHtml =
-      order.items
-        ?.map(
-          (item) => `
-            <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:4px;">
-              <span>${item.quantity}x ${item.name}</span>
-              <span>R$ ${(toMoney(item.price) * Number(item.quantity)).toFixed(2)}</span>
-            </div>
-          `
-        )
-        .join("") || "";
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Pedido ${getOrderCode(order)}</title>
-          <style>
-            body { font-family: monospace; width: 300px; margin: 0; padding: 10px; color: #000; }
-            h2, p { margin: 0 0 6px 0; }
-            .divider { border-top: 1px dashed #000; margin: 8px 0; }
-            .center { text-align: center; }
-          </style>
-        </head>
-        <body>
-          <h2 class="center">Pizzaria KMCL</h2>
-          <p class="center">Recibo do Pedido</p>
-          <div class="divider"></div>
-          <p><strong>Pedido:</strong> ${getOrderCode(order)}</p>
-          <p><strong>Cliente:</strong> ${order.customer?.name || ""}</p>
-          <p><strong>WhatsApp:</strong> ${order.customer?.whatsapp || ""}</p>
-          <p><strong>Endereço:</strong> ${formatAddress(order.customer)}</p>
-          <div class="divider"></div>
-          <p><strong>Itens:</strong></p>
-          ${itemsHtml}
-          <div class="divider"></div>
-          <p><strong>Total:</strong> R$ ${orderTotal.toFixed(2)}</p>
-          <p><strong>Pagamento:</strong> ${order.paymentMethod}</p>
-          <p><strong>Status:</strong> ${order.status}</p>
-          ${order.changeFor ? `<p><strong>Troco para:</strong> R$ ${order.changeFor}</p>` : ""}
-          ${order.observation ? `<p><strong>Obs:</strong> ${order.observation}</p>` : ""}
-          <div class="divider"></div>
-          <p class="center">Obrigado pela preferência!</p>
-          <script>window.print(); window.onafterprint = () => window.close();</script>
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
+  if (!printWindow) {
+    alert("O navegador bloqueou a janela de impressão.");
+    return;
   }
+
+  const orderTotal = getOrderTotal(order);
+  const orderCode = getOrderCode(order);
+
+  const escapeHtml = (value: unknown) =>
+    String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+  function formatItemDescription(rawName: string) {
+    const normalizedName = String(rawName || "").trim();
+
+    if (!normalizedName) {
+      return {
+        main: "Item sem nome",
+        details: "",
+      };
+    }
+
+    const parts = normalizedName
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    const main = parts[0] || normalizedName;
+    const details = parts.slice(1);
+
+    const detailsHtml = details
+      .map((detail) => {
+        const isAdditional = detail
+          .toLowerCase()
+          .startsWith("adicionais:");
+
+        if (isAdditional) {
+          const additionalText = detail
+            .replace(/^adicionais:\s*/i, "")
+            .trim();
+
+          const additionalItems = additionalText
+            .split("+")
+            .map((item) => item.trim())
+            .filter(Boolean);
+
+          return `
+            <div class="additional-block">
+              <div class="additional-title">Adicionais</div>
+
+              ${additionalItems
+                .map(
+                  (additional) => `
+                    <div class="detail-line">
+                      + ${escapeHtml(additional)}
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="detail-line">
+            ${escapeHtml(detail)}
+          </div>
+        `;
+      })
+      .join("");
+
+    return {
+      main,
+      details: detailsHtml,
+    };
+  }
+
+  const itemsHtml =
+    order.items
+      ?.map((item) => {
+        const quantity = Number(item.quantity || 1);
+        const itemTotal = toMoney(item.price) * quantity;
+        const description = formatItemDescription(item.name);
+
+        return `
+          <div class="item">
+            <div class="item-main">
+              <span class="quantity">
+                ${quantity}x
+              </span>
+
+              <span class="item-name">
+                ${escapeHtml(description.main)}
+              </span>
+
+              <span class="item-price">
+                ${formatBRL(itemTotal)}
+              </span>
+            </div>
+
+            ${
+              description.details
+                ? `
+                  <div class="item-details">
+                    ${description.details}
+                  </div>
+                `
+                : ""
+            }
+          </div>
+        `;
+      })
+      .join("") || "";
+
+  const companyTitle =
+    String(companyName || "").trim() || "Estabelecimento";
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+
+    <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8" />
+
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1"
+        />
+
+        <title>Pedido ${escapeHtml(orderCode)}</title>
+
+        <style>
+          @page {
+            size: 80mm auto;
+            margin: 0;
+          }
+
+          * {
+            box-sizing: border-box;
+          }
+
+          html,
+          body {
+            width: 80mm;
+            min-width: 80mm;
+            margin: 0;
+            padding: 0;
+            color: #000;
+            background: #fff;
+          }
+
+          body {
+            padding: 4mm 4mm 7mm;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 14px;
+            line-height: 1.38;
+            font-weight: 500;
+          }
+
+          .header {
+            text-align: center;
+          }
+
+          .company-name {
+            margin: 0;
+            font-size: 24px;
+            line-height: 1.1;
+            font-weight: 900;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+          }
+
+          .receipt-title {
+            margin: 5px 0 0;
+            font-size: 14px;
+            font-weight: 700;
+          }
+
+          .order-label {
+            margin-top: 9px;
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+
+          .order-code {
+            margin-top: 2px;
+            font-size: 17px;
+            line-height: 1.2;
+            font-weight: 900;
+            white-space: nowrap;
+          }
+
+          .divider {
+            width: 100%;
+            border-top: 1px dashed #000;
+            margin: 10px 0;
+          }
+
+          .section-title {
+            margin: 0 0 7px;
+            font-size: 16px;
+            font-weight: 900;
+          }
+
+          .field {
+            margin: 0 0 6px;
+            overflow-wrap: anywhere;
+          }
+
+          .field-label {
+            font-weight: 900;
+          }
+
+          .address {
+            line-height: 1.4;
+          }
+
+          .item {
+            margin-bottom: 13px;
+            page-break-inside: avoid;
+          }
+
+          .item-main {
+            display: grid;
+            grid-template-columns: 27px minmax(0, 1fr) auto;
+            column-gap: 6px;
+            align-items: start;
+          }
+
+          .quantity,
+          .item-name,
+          .item-price {
+            font-size: 15px;
+            line-height: 1.35;
+            font-weight: 800;
+          }
+
+          .quantity {
+            white-space: nowrap;
+          }
+
+          .item-name {
+            overflow-wrap: anywhere;
+          }
+
+          .item-price {
+            white-space: nowrap;
+            text-align: right;
+          }
+
+          .item-details {
+            margin-top: 5px;
+            margin-left: 33px;
+          }
+
+          .detail-line {
+            margin-top: 2px;
+            font-size: 13px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+          }
+
+          .additional-block {
+            margin-top: 6px;
+          }
+
+          .additional-title {
+            margin-bottom: 2px;
+            font-size: 13px;
+            font-weight: 900;
+          }
+
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 8px;
+            margin-top: 4px;
+          }
+
+          .total-label,
+          .total-value {
+            font-size: 21px;
+            font-weight: 900;
+          }
+
+          .payment-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 8px;
+            font-size: 14px;
+            font-weight: 800;
+          }
+
+          .payment-row span:last-child {
+            text-align: right;
+          }
+
+          .footer {
+            margin-top: 13px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 800;
+          }
+
+          @media print {
+            html,
+            body {
+              width: 80mm !important;
+              min-width: 80mm !important;
+            }
+
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <header class="header">
+          <h1 class="company-name">
+            ${escapeHtml(companyTitle)}
+          </h1>
+
+          <p class="receipt-title">
+            Pedido do cardápio online
+          </p>
+
+          <div class="order-label">
+            Pedido
+          </div>
+
+          <div class="order-code">
+            ${escapeHtml(orderCode)}
+          </div>
+        </header>
+
+        <div class="divider"></div>
+
+        <section>
+          <p class="field">
+            <span class="field-label">Cliente:</span>
+            ${escapeHtml(order.customer?.name || "Não informado")}
+          </p>
+
+          <p class="field">
+            <span class="field-label">WhatsApp:</span>
+            ${escapeHtml(
+              order.customer?.whatsapp || "Não informado"
+            )}
+          </p>
+
+          <p class="field address">
+            <span class="field-label">Endereço:</span>
+            ${escapeHtml(formatAddress(order.customer))}
+          </p>
+        </section>
+
+        ${
+          order.observation
+            ? `
+              <div class="divider"></div>
+
+              <section>
+                <p class="section-title">
+                  Observação do pedido
+                </p>
+
+                <p class="field">
+                  ${escapeHtml(order.observation)}
+                </p>
+              </section>
+            `
+            : ""
+        }
+
+        <div class="divider"></div>
+
+        <section>
+          <p class="section-title">Itens</p>
+
+          ${itemsHtml}
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+          <div class="total-row">
+            <span class="total-label">
+              Total
+            </span>
+
+            <span class="total-value">
+              ${formatBRL(orderTotal)}
+            </span>
+          </div>
+
+          <div class="payment-row">
+            <span>Pagamento</span>
+
+            <span>
+              ${escapeHtml(order.paymentMethod)}
+            </span>
+          </div>
+
+          ${
+            order.changeFor
+              ? `
+                <div class="payment-row">
+                  <span>Troco para</span>
+
+                  <span>
+                    ${formatBRL(toMoney(order.changeFor))}
+                  </span>
+                </div>
+              `
+              : ""
+          }
+
+          <div class="payment-row">
+            <span>Status</span>
+
+            <span>
+              ${escapeHtml(
+                statusLabels[order.status] || order.status
+              )}
+            </span>
+          </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <footer class="footer">
+          Obrigado pela preferência!
+        </footer>
+
+        <script>
+          window.addEventListener("load", function () {
+            setTimeout(function () {
+              window.print();
+            }, 250);
+          });
+
+          window.addEventListener("afterprint", function () {
+            window.close();
+          });
+        </script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+}
 
   async function updateStatus(order: Order, status: StatusType) {
     try {
