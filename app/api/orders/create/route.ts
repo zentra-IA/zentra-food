@@ -63,7 +63,7 @@ if (!companyId) {
 }
 
 if (!branchId) {
-  const branch = await db.branch.findFirst({
+  const branch = await db.branches.findFirst({
     where: {
       company_id: companyId,
       active: true,
