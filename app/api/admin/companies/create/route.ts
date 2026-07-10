@@ -50,9 +50,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const supabaseAdmin = getSupabaseAdmin();
+  const supabaseAdmin = getSupabaseAdmin();
 
+  let createdUserId: string | null = null;
+  let createdCompanyId: string | null = null;
+
+  try {
     const body = await req.json();
 
     const restaurantName = String(body.restaurantName || "").trim();
@@ -72,6 +75,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const baseSlug = slugify(restaurantName) || `empresa-${Date.now()}`;
+    const finalSlug = `${baseSlug}-${Date.now()}`;
+
+    const { data: company, error: companyError } = await supabaseAdmin
+      .from("companies")
+      .insert({
+        name: restaurantName,
+        slug: finalSlug,
+        plan_id: planId,
+        active: true,
+      })
+      .select()
+      .single();
+
+    if (companyError || !company?.id) {
+      throw new Error(companyError?.message || "Erro ao criar empresa");
+    }
+
+    createdCompanyId = company.id;
+
+    const { data: branch, error: branchError } = await supabaseAdmin
+      .from("branches")
+      .insert({
+        company_id: company.id,
+        name: "Matriz",
+        slug: "matriz",
+        active: true,
+      })
+      .select()
+      .single();
+
+    if (branchError || !branch?.id) {
+      throw new Error(branchError?.message || "Erro ao criar filial Matriz");
+    }
+
     const { data: userData, error: userError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
@@ -89,44 +127,13 @@ export async function POST(req: NextRequest) {
       throw new Error(userError?.message || "Erro ao criar usuário");
     }
 
-    const userId = userData.user.id;
-    const baseSlug = slugify(restaurantName) || `empresa-${Date.now()}`;
-
-    const { data: company, error: companyError } = await supabaseAdmin
-      .from("companies")
-      .insert({
-        name: restaurantName,
-        slug: `${baseSlug}-${Date.now()}`,
-        plan_id: planId,
-        active: true,
-      })
-      .select()
-      .single();
-
-    if (companyError || !company) {
-      throw new Error(companyError?.message || "Erro ao criar empresa");
-    }
-
-    const { data: branch, error: branchError } = await supabaseAdmin
-      .from("branches")
-      .insert({
-        company_id: company.id,
-        name: "Matriz",
-        slug: "matriz",
-        active: true,
-      })
-      .select()
-      .single();
-
-    if (branchError || !branch) {
-      throw new Error(branchError?.message || "Erro ao criar filial");
-    }
+    createdUserId = userData.user.id;
 
     const { error: companyUserError } = await supabaseAdmin
       .from("company_users")
       .insert({
         company_id: company.id,
-        user_id: userId,
+        user_id: userData.user.id,
         name: ownerName,
         email,
         phone,
@@ -204,7 +211,7 @@ export async function POST(req: NextRequest) {
           .select()
           .single();
 
-      if (templateError || !createdTemplate) {
+      if (templateError || !createdTemplate?.id) {
         throw new Error(
           templateError?.message || "Erro ao criar mensagens padrão"
         );
@@ -227,16 +234,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const { data: branchCheck } = await supabaseAdmin
+      .from("branches")
+      .select("id")
+      .eq("company_id", company.id)
+      .eq("active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (!branchCheck?.id) {
+      throw new Error("Empresa criada sem filial ativa.");
+    }
+
     return NextResponse.json({
       success: true,
       company,
       branch,
       user: {
-        id: userId,
+        id: userData.user.id,
         email,
       },
     });
   } catch (error: any) {
+    if (createdCompanyId) {
+      await supabaseAdmin.from("message_variations").delete().eq("company_id", createdCompanyId);
+      await supabaseAdmin.from("message_templates").delete().eq("company_id", createdCompanyId);
+      await supabaseAdmin.from("company_contacts").delete().eq("company_id", createdCompanyId);
+      await supabaseAdmin.from("company_users").delete().eq("company_id", createdCompanyId);
+      await supabaseAdmin.from("branches").delete().eq("company_id", createdCompanyId);
+      await supabaseAdmin.from("companies").delete().eq("id", createdCompanyId);
+    }
+
+    if (createdUserId) {
+      await supabaseAdmin.auth.admin.deleteUser(createdUserId);
+    }
+
     return NextResponse.json(
       {
         error: error?.message || "Erro ao criar empresa",
