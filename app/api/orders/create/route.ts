@@ -52,8 +52,36 @@ function normalizePaymentMethod(value: string): PaymentMethod {
 
 export async function POST(req: NextRequest) {
   try {
-    const companyId = getCompanyId(req);
-    const branchId = getBranchId(req);
+   const companyId = getCompanyId(req);
+let branchId = getBranchId(req);
+
+if (!companyId) {
+  return NextResponse.json(
+    { error: "Empresa não identificada" },
+    { status: 401 }
+  );
+}
+
+if (!branchId) {
+  const branch = await db.branch.findFirst({
+    where: {
+      company_id: companyId,
+      active: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  branchId = branch?.id || null;
+}
+
+if (!branchId) {
+  return NextResponse.json(
+    { error: "Nenhuma filial ativa encontrada para esta empresa." },
+    { status: 400 }
+  );
+}
 
     if (!companyId) {
       return NextResponse.json(
@@ -88,7 +116,7 @@ export async function POST(req: NextRequest) {
     const createdCustomer = await db.customer.create({
       data: {
         company_id: companyId,
-        branch_id: branchId || null,
+        branch_id: branchId,
         name: customer.name,
         whatsapp: customer.whatsapp,
         email: customer.email || null,
@@ -102,7 +130,7 @@ export async function POST(req: NextRequest) {
     const order = await db.order.create({
       data: {
         company_id: companyId,
-        branch_id: branchId || null,
+       branch_id: branchId,
         code: generateOrderCode(),
         customerId: createdCustomer.id,
         paymentMethod,
@@ -112,7 +140,7 @@ export async function POST(req: NextRequest) {
         items: {
           create: items.map((item) => ({
             company_id: companyId,
-            branch_id: branchId || null,
+            branch_id: branchId,
             productId: item.productId || null,
             name: item.name,
             price: Number(item.price || 0),
