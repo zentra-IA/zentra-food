@@ -9,6 +9,10 @@ type CartItem = {
   name: string;
   price: number;
   quantity: number;
+
+categoryId?: string | null;
+  categoryName?: string | null;
+
   isHalfHalf?: boolean;
   isCombo?: boolean;
   comboId?: string;
@@ -153,26 +157,33 @@ export default function CheckoutPage() {
   }
 
   function buildItemDisplayName(item: CartItem) {
-    let finalName = "Produto";
+  let productName = "Produto";
 
-    if (item.isHalfHalf && item.flavorNames?.length) {
-      finalName = `Meio a Meio: ${item.flavorNames.join(" + ")}`;
-    } else if (item.isCombo) {
-      finalName = item.name?.trim() || "Combo";
-    } else {
-      finalName = item.name?.trim() || "Produto";
-    }
-
-    if (item.isCombo && item.comboSelectionsSummary?.length) {
-      finalName += ` | Itens: ${item.comboSelectionsSummary.join(" | ")}`;
-    }
-
-    if (item.additionalNames?.length) {
-      finalName += ` | Adicionais: ${item.additionalNames.join(", ")}`;
-    }
-
-    return finalName;
+  if (item.isHalfHalf && item.flavorNames?.length) {
+    productName = `Meio a Meio: ${item.flavorNames.join(" + ")}`;
+  } else if (item.isCombo) {
+    productName = item.name?.trim() || "Combo";
+  } else {
+    productName = item.name?.trim() || "Produto";
   }
+
+  const categoryName = String(item.categoryName || "").trim();
+
+  let finalName =
+    categoryName && !productName.startsWith(`${categoryName} |`)
+      ? `${categoryName} | ${productName}`
+      : productName;
+
+  if (item.isCombo && item.comboSelectionsSummary?.length) {
+    finalName += ` | Itens: ${item.comboSelectionsSummary.join(" | ")}`;
+  }
+
+  if (item.additionalNames?.length) {
+    finalName += ` | Adicionais: ${item.additionalNames.join(", ")}`;
+  }
+
+  return finalName;
+}
   async function handleFinishOrder() {
     if (cart.length === 0) return alert("Seu carrinho está vazio.");
     if (!customerName.trim()) return alert("Nome do cliente é obrigatório");

@@ -91,6 +91,10 @@ type CartItem = {
   name: string;
   price: number;
   quantity: number;
+
+  categoryId?: string | null;
+  categoryName?: string | null;
+
   isHalfHalf?: boolean;
   isCombo?: boolean;
   comboId?: string;
@@ -167,9 +171,12 @@ export default function HomePage() {
   const storeOpen = isStoreOpenNow();
 
   useEffect(() => {
-    if (!slug) return;
+  if (!slug) return;
 
-localStorage.setItem("last_menu_url", window.location.href);
+  localStorage.setItem(
+    "last_menu_url",
+    window.location.href
+  );
 
     loadData();
 
@@ -292,121 +299,154 @@ localStorage.setItem("last_menu_url", window.location.href);
     return Boolean(getProductAdditionals(product, category).length);
   }
 
-  function addPlainProductToCart(product: Product) {
-    const existing = cart.find(
-      (item) =>
-        !item.isHalfHalf &&
-        !item.isCombo &&
-        item.productId === product.id &&
-        (!item.additionalIds || item.additionalIds.length === 0)
-    );
+  function addPlainProductToCart(
+  product: Product,
+  category?: Category | null
+) {
+  const categoryId = category?.id || null;
+  const categoryName = category?.name || null;
 
-    if (existing) {
-      const nextCart = cart.map((item) =>
-        !item.isHalfHalf &&
-        !item.isCombo &&
-        item.productId === product.id &&
-        (!item.additionalIds || item.additionalIds.length === 0)
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      );
+  const existing = cart.find(
+    (item) =>
+      !item.isHalfHalf &&
+      !item.isCombo &&
+      item.productId === product.id &&
+      (item.categoryId || null) === categoryId &&
+      (!item.additionalIds || item.additionalIds.length === 0)
+  );
 
-      saveCart(nextCart);
-      showToast("Produto adicionado ao pedido.");
-      return;
-    }
-
-    const nextCart = [
-      ...cart,
-      {
-        id: crypto.randomUUID(),
-        productId: product.id,
-        name: product.name,
-        price: getDisplayPrice(product),
-        quantity: 1,
-        additionalIds: [],
-        additionalNames: [],
-      },
-    ];
-
-    saveCart(nextCart);
-    showToast("Produto adicionado ao pedido.");
-  }
-
-  function addToCart(product: Product, category?: Category | null) {
-    if (hasAdditionalsForProduct(product, category)) {
-      openProductOptions(product, category || null);
-      return;
-    }
-
-    addPlainProductToCart(product);
-  }
-
-  function removeFromCart(productId: string) {
-    const existing = cart.find(
-      (item) =>
-        !item.isHalfHalf &&
-        !item.isCombo &&
-        item.productId === productId &&
-        (!item.additionalIds || item.additionalIds.length === 0)
-    );
-
-    if (!existing) return;
-
-    if (existing.quantity <= 1) {
-      const nextCart = cart.filter(
-        (item) =>
-          !(
-            !item.isHalfHalf &&
-            !item.isCombo &&
-            item.productId === productId &&
-            (!item.additionalIds || item.additionalIds.length === 0)
-          )
-      );
-
-      saveCart(nextCart);
-      return;
-    }
-
+  if (existing) {
     const nextCart = cart.map((item) =>
       !item.isHalfHalf &&
       !item.isCombo &&
-      item.productId === productId &&
+      item.productId === product.id &&
+      (item.categoryId || null) === categoryId &&
       (!item.additionalIds || item.additionalIds.length === 0)
-        ? { ...item, quantity: item.quantity - 1 }
+        ? { ...item, quantity: item.quantity + 1 }
         : item
     );
 
     saveCart(nextCart);
+    showToast("Produto adicionado ao pedido.");
+    return;
   }
 
-  function getProductQuantity(productId: string) {
-    const item = cart.find(
-      (cartItem) =>
-        !cartItem.isHalfHalf &&
-        !cartItem.isCombo &&
-        cartItem.productId === productId &&
-        (!cartItem.additionalIds || cartItem.additionalIds.length === 0)
+  const nextCart: CartItem[] = [
+    ...cart,
+    {
+      id: crypto.randomUUID(),
+      productId: product.id,
+      name: product.name,
+      price: getDisplayPrice(product),
+      quantity: 1,
+
+      categoryId,
+      categoryName,
+
+      additionalIds: [],
+      additionalNames: [],
+    },
+  ];
+
+  saveCart(nextCart);
+  showToast("Produto adicionado ao pedido.");
+}
+
+  function addToCart(
+  product: Product,
+  category?: Category | null
+) {
+  if (hasAdditionalsForProduct(product, category)) {
+    openProductOptions(product, category || null);
+    return;
+  }
+
+  addPlainProductToCart(product, category || null);
+}
+
+function removeFromCart(
+  productId: string,
+  categoryId?: string | null
+) {
+  const normalizedCategoryId = categoryId || null;
+
+  const existing = cart.find(
+    (item) =>
+      !item.isHalfHalf &&
+      !item.isCombo &&
+      item.productId === productId &&
+      (item.categoryId || null) === normalizedCategoryId &&
+      (!item.additionalIds || item.additionalIds.length === 0)
+  );
+
+  if (!existing) return;
+
+  if (existing.quantity <= 1) {
+    const nextCart = cart.filter(
+      (item) =>
+        !(
+          !item.isHalfHalf &&
+          !item.isCombo &&
+          item.productId === productId &&
+          (item.categoryId || null) === normalizedCategoryId &&
+          (!item.additionalIds || item.additionalIds.length === 0)
+        )
     );
 
-    return item ? item.quantity : 0;
+    saveCart(nextCart);
+    return;
   }
 
-  function openProductOptions(product: Product, category: Category | null) {
-    if (!hasAdditionalsForProduct(product, category)) {
-      addPlainProductToCart(product);
-      return;
-    }
+  const nextCart = cart.map((item) =>
+    !item.isHalfHalf &&
+    !item.isCombo &&
+    item.productId === productId &&
+    (item.categoryId || null) === normalizedCategoryId &&
+    (!item.additionalIds || item.additionalIds.length === 0)
+      ? { ...item, quantity: item.quantity - 1 }
+      : item
+  );
 
-    setSelectedTarget({
-      type: "PRODUCT",
-      product,
-      category,
-    });
+  saveCart(nextCart);
+}
 
-    setModalQuantity(1);
-    setSelectedAdditionals([]);
+function getProductQuantity(
+  productId: string,
+  categoryId?: string | null
+) {
+  const normalizedCategoryId = categoryId || null;
+
+  const item = cart.find(
+    (cartItem) =>
+      !cartItem.isHalfHalf &&
+      !cartItem.isCombo &&
+      cartItem.productId === productId &&
+      (cartItem.categoryId || null) === normalizedCategoryId &&
+      (!cartItem.additionalIds ||
+        cartItem.additionalIds.length === 0)
+  );
+
+  return item ? item.quantity : 0;
+}
+
+  function openProductOptions(
+  product: Product,
+  category: Category | null
+) {
+  if (!hasAdditionalsForProduct(product, category)) {
+    addPlainProductToCart(product, category);
+    return;
   }
+
+  setSelectedTarget({
+    type: "PRODUCT",
+    product,
+    category,
+  });
+
+  setModalQuantity(1);
+  setSelectedAdditionals([]);
+}
 
   function closeOptionsModal() {
     setSelectedTarget(null);
@@ -484,52 +524,62 @@ localStorage.setItem("last_menu_url", window.location.href);
   }
 
   function confirmSelectedTarget() {
-    if (!selectedTarget) return;
-    if (!validateRequiredAdditionals()) return;
+  if (!selectedTarget) return;
+  if (!validateRequiredAdditionals()) return;
 
-    if (selectedTarget.type === "PRODUCT") {
-      const product = selectedTarget.product;
+  if (selectedTarget.type === "PRODUCT") {
+    const product = selectedTarget.product;
 
-      const nextCart = [
-        ...cart,
-        {
-          id: crypto.randomUUID(),
-          productId: product.id,
-          name: product.name,
-          price: Number(finalModalPrice),
-          quantity: modalQuantity,
-          additionalIds: selectedAdditionals.map((item) => item.id),
-          additionalNames: selectedAdditionals.map((item) => item.name),
-        },
-      ];
-
-      saveCart(nextCart);
-      closeOptionsModal();
-      showToast("Produto adicionado ao pedido.");
-      return;
-    }
-
-    const nextCart = [
+    const nextCart: CartItem[] = [
       ...cart,
       {
         id: crypto.randomUUID(),
-        productId: selectedTarget.productId,
-        name: selectedTarget.name,
+        productId: product.id,
+        name: product.name,
         price: Number(finalModalPrice),
         quantity: modalQuantity,
-        isHalfHalf: true,
-        flavorIds: selectedTarget.flavorIds,
-        flavorNames: selectedTarget.flavorNames,
+
+        categoryId: selectedTarget.category?.id || null,
+        categoryName: selectedTarget.category?.name || null,
+
         additionalIds: selectedAdditionals.map((item) => item.id),
         additionalNames: selectedAdditionals.map((item) => item.name),
       },
     ];
 
     saveCart(nextCart);
-    setSelectedFlavors([]);
     closeOptionsModal();
-    showToast("Pizza meio a meio adicionada ao pedido.");
+    showToast("Produto adicionado ao pedido.");
+    return;
   }
+
+  const nextCart: CartItem[] = [
+    ...cart,
+    {
+      id: crypto.randomUUID(),
+      productId: selectedTarget.productId,
+      name: selectedTarget.name,
+      price: Number(finalModalPrice),
+      quantity: modalQuantity,
+      isHalfHalf: true,
+
+      categoryId: selectedTarget.category.id,
+      categoryName: selectedTarget.category.name,
+
+      flavorIds: selectedTarget.flavorIds,
+      flavorNames: selectedTarget.flavorNames,
+      additionalIds: selectedAdditionals.map((item) => item.id),
+      additionalNames: selectedAdditionals.map((item) => item.name),
+    },
+  ];
+
+  saveCart(nextCart);
+  setSelectedFlavors([]);
+  closeOptionsModal();
+  showToast("Pizza meio a meio adicionada ao pedido.");
+}
+
+ 
 
   function toggleFlavor(product: Product) {
     setSelectedFlavors((prev) => {
@@ -592,21 +642,25 @@ localStorage.setItem("last_menu_url", window.location.href);
       return;
     }
 
-    const nextCart = [
-      ...cart,
-      {
-        id: crypto.randomUUID(),
-        productId: `half-half-${flavor1.id}-${flavor2.id}`,
-        name: `Meio a Meio: ${flavor1.name} + ${flavor2.name}`,
-        price,
-        quantity: 1,
-        isHalfHalf: true,
-        flavorIds: [flavor1.id, flavor2.id],
-        flavorNames: [flavor1.name, flavor2.name],
-        additionalIds: [],
-        additionalNames: [],
-      },
-    ];
+    const nextCart: CartItem[] = [
+  ...cart,
+  {
+    id: crypto.randomUUID(),
+    productId: `half-half-${flavor1.id}-${flavor2.id}`,
+    name: `Meio a Meio: ${flavor1.name} + ${flavor2.name}`,
+    price,
+    quantity: 1,
+    isHalfHalf: true,
+
+    categoryId: halfHalfCategory?.id || null,
+    categoryName: halfHalfCategory?.name || null,
+
+    flavorIds: [flavor1.id, flavor2.id],
+    flavorNames: [flavor1.name, flavor2.name],
+    additionalIds: [],
+    additionalNames: [],
+  },
+];
 
     saveCart(nextCart);
     setSelectedFlavors([]);
@@ -1142,7 +1196,10 @@ localStorage.setItem("last_menu_url", window.location.href);
             </div>
           ) : (
             filteredProducts.map((product, index) => {
-              const quantity = getProductQuantity(product.id);
+              const quantity = getProductQuantity(
+  product.id,
+  selectedCategory?.id || null
+);
               const flavorSelected = isFlavorSelected(product.id);
               const productHasAdditionals = hasAdditionalsForProduct(
                 product,
@@ -1227,7 +1284,12 @@ localStorage.setItem("last_menu_url", window.location.href);
                       ) : (
                         <div className="inline-flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-2 py-1.5">
                           <button
-                            onClick={() => removeFromCart(product.id)}
+                            onClick={() =>
+  removeFromCart(
+    product.id,
+    selectedCategory?.id || null
+  )
+}
                             className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-600 font-black text-white"
                           >
                             -

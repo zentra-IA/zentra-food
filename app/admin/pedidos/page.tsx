@@ -56,6 +56,9 @@ type Order = {
   deliveryBatchCode?: string | null;
   deliveryRouteOrder?: number | null;
   dispatchedAt?: string | null;
+subtotal?: number | string;
+deliveryFee?: number | string;
+discount?: number | string;
 };
 
 type StatusType =
@@ -1268,23 +1271,58 @@ async function loadCompany() {
         )}
 
         <div className="mt-4 rounded-2xl bg-zinc-950 p-4 text-white">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-zinc-300">Total</span>
-            <span className="text-xl font-black">{formatBRL(getOrderTotal(order))}</span>
-          </div>
-          <div className="mt-1 flex items-center justify-between text-sm text-zinc-300">
-            <span>Pagamento</span>
-            <span className="font-bold text-white">{order.paymentMethod}</span>
-          </div>
-          {order.changeFor && (
-            <div className="mt-1 flex items-center justify-between text-sm text-zinc-300">
-              <span>Troco para</span>
-              <span className="font-bold text-white">R$ {order.changeFor}</span>
-            </div>
-          )}
-        </div>
+  {Number(order.subtotal || 0) > 0 && (
+    <div className="flex items-center justify-between text-sm text-zinc-300">
+      <span>Subtotal</span>
+      <span className="font-bold text-white">
+        {formatBRL(Number(order.subtotal))}
+      </span>
+    </div>
+  )}
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+  {Number(order.deliveryFee || 0) > 0 && (
+    <div className="mt-1 flex items-center justify-between text-sm text-zinc-300">
+      <span>Taxa de entrega</span>
+      <span className="font-bold text-white">
+        {formatBRL(Number(order.deliveryFee))}
+      </span>
+    </div>
+  )}
+
+  {Number(order.discount || 0) > 0 && (
+    <div className="mt-1 flex items-center justify-between text-sm text-zinc-300">
+      <span>Desconto</span>
+      <span className="font-bold text-white">
+        - {formatBRL(Number(order.discount))}
+      </span>
+    </div>
+  )}
+
+  <div className="mt-2 flex items-center justify-between border-t border-white/20 pt-2">
+    <span className="text-sm text-zinc-300">Total</span>
+    <span className="text-xl font-black">
+      {formatBRL(getOrderTotal(order))}
+    </span>
+  </div>
+
+  <div className="mt-1 flex items-center justify-between text-sm text-zinc-300">
+    <span>Pagamento</span>
+    <span className="font-bold text-white">
+      {order.paymentMethod}
+    </span>
+  </div>
+
+  {order.changeFor && (
+    <div className="mt-1 flex items-center justify-between text-sm text-zinc-300">
+      <span>Troco para</span>
+      <span className="font-bold text-white">
+        {formatBRL(Number(order.changeFor))}
+      </span>
+    </div>
+  )}
+</div>
+
+<div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {!archivedView && (
             <>
               <button onClick={() => updateStatus(order, "NOVO")} disabled={loadingId === order.id} className="rounded-2xl bg-zinc-700 px-3 py-2 text-xs font-black text-white disabled:opacity-50">Novo</button>

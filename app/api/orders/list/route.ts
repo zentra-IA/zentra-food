@@ -48,11 +48,21 @@ export async function GET(req: NextRequest) {
 
         archived: false,
         archivedAt: null,
-        observation: null,
-        changeFor: null,
+        observation: order.observation || null,
+
+changeFor:
+  order.changeFor !== null &&
+  order.changeFor !== undefined
+    ? Number(order.changeFor)
+    : null,
+subtotal: Number(order.subtotal || 0),
+deliveryFee: Number(order.deliveryFee || 0),
+discount: Number(order.discount || 0),
 
         channel: isPDV ? "LOJA" : "ONLINE",
-        orderType: isPDV ? "LOCAL" : "DELIVERY",
+        orderType:
+  order.orderType ||
+  (isPDV ? "LOCAL" : "DELIVERY"),
 
         deliveryRouteOrder: null,
         dispatchedAt: null,

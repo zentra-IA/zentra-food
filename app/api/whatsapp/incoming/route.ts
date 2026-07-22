@@ -105,13 +105,7 @@ function buildSendSession(companyId: string, sessionId: number | string) {
 }
 
 function getCompanySearchOrder(companyId: string) {
-  const list = [companyId];
-
-  if (DEFAULT_COMPANY_ID && DEFAULT_COMPANY_ID !== companyId) {
-    list.push(DEFAULT_COMPANY_ID);
-  }
-
-  return list.filter(Boolean);
+  return companyId ? [companyId] : [];
 }
 
 function applyVariables(text: string, lead: any, extra: any = {}) {

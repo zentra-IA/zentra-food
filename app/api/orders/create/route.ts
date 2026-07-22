@@ -16,9 +16,23 @@ const orderSchema = z.object({
     complement: z.string().optional().nullable(),
     email: z.string().optional().nullable(),
   }),
+
   paymentMethod: z.string().min(1),
-  observacao: z.string().optional().nullable(),
+
+  observation: z.string().optional().nullable(),
+
+  changeFor: z
+    .union([z.string(), z.number()])
+    .optional()
+    .nullable(),
+
+  subtotalAmount: z.number().nonnegative(),
+  deliveryFee: z.number().nonnegative().default(0),
+  discountValue: z.number().nonnegative().default(0),
   totalAmount: z.number().positive(),
+
+  couponCode: z.string().optional().nullable(),
+
   items: z
     .array(
       z.object({
@@ -83,12 +97,6 @@ if (!branchId) {
   );
 }
 
-    if (!companyId) {
-      return NextResponse.json(
-        { error: "Empresa não identificada" },
-        { status: 401 }
-      );
-    }
 
     const body = await req.json();
     const parsed = orderSchema.safeParse(body);
@@ -100,8 +108,39 @@ if (!branchId) {
       );
     }
 
-    const { customer, totalAmount, items } = parsed.data;
-    const paymentMethod = normalizePaymentMethod(parsed.data.paymentMethod);
+    const {
+  customer,
+  totalAmount,
+  subtotalAmount,
+  deliveryFee,
+  discountValue,
+  observation,
+  changeFor,
+  items,
+} = parsed.data;
+
+const paymentMethod = normalizePaymentMethod(
+  parsed.data.paymentMethod
+);
+
+const normalizedObservation =
+  String(observation || "").trim() || null;
+
+const normalizedChangeFor =
+  changeFor !== null &&
+  changeFor !== undefined &&
+  changeFor !== ""
+    ? Number(String(changeFor).replace(",", "."))
+    : null;
+if (
+  normalizedChangeFor !== null &&
+  !Number.isFinite(normalizedChangeFor)
+) {
+  return NextResponse.json(
+    { error: "Valor de troco inválido" },
+    { status: 400 }
+  );
+}
 
     const fullAddress = [
       customer.address,
@@ -136,7 +175,15 @@ if (!branchId) {
         paymentMethod,
         status: "NOVO" as OrderStatus,
         archived: false,
-        total: totalAmount,
+
+subtotal: subtotalAmount,
+deliveryFee,
+discount: discountValue,
+total: totalAmount,
+
+changeFor: normalizedChangeFor,
+observation: normalizedObservation,
+orderType: "DELIVERY",
         items: {
           create: items.map((item) => ({
             company_id: companyId,

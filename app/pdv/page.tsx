@@ -379,42 +379,51 @@ export default function PDVPage() {
     return Boolean(getProductAdditionals(product, category).length);
   }
 
-  function addPlainProductToCart(product: Product) {
-    setCart((prev) => {
-      const existing = prev.find(
-        (item) =>
-          item.type === "PRODUCT" &&
-          item.refId === product.id &&
-          (!item.additionalIds || item.additionalIds.length === 0)
+ function addPlainProductToCart(
+  product: Product,
+  category?: Category | null
+) {
+  const refId = `${category?.id || "sem-categoria"}:${product.id}`;
+
+  const itemName = category?.name
+    ? `${category.name} | ${product.name}`
+    : product.name;
+
+  setCart((prev) => {
+    const existing = prev.find(
+      (item) =>
+        item.type === "PRODUCT" &&
+        item.refId === refId &&
+        (!item.additionalIds || item.additionalIds.length === 0)
+    );
+
+    if (existing) {
+      return prev.map((item) =>
+        item.type === "PRODUCT" &&
+        item.refId === refId &&
+        (!item.additionalIds || item.additionalIds.length === 0)
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
       );
+    }
 
-      if (existing) {
-        return prev.map((item) =>
-          item.type === "PRODUCT" &&
-          item.refId === product.id &&
-          (!item.additionalIds || item.additionalIds.length === 0)
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-
-      return [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: "PRODUCT",
-          refId: product.id,
-          productId: product.id,
-          name: product.name,
-          unitPrice: Number(product.price),
-          quantity: 1,
-          notes: "",
-          additionalIds: [],
-          additionalNames: [],
-        },
-      ];
-    });
-  }
+    return [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: "PRODUCT",
+        refId,
+        productId: product.id,
+        name: itemName,
+        unitPrice: Number(product.price),
+        quantity: 1,
+        notes: "",
+        additionalIds: [],
+        additionalNames: [],
+      },
+    ];
+  });
+}
 
   function openProductOptions(product: Product, category: Category | null) {
     setSelectedTarget({
@@ -431,7 +440,7 @@ export default function PDVPage() {
       return;
     }
 
-    addPlainProductToCart(product);
+    addPlainProductToCart(product, category || null);
   }
 
   function addCombo(combo: Combo) {
@@ -514,7 +523,7 @@ export default function PDVPage() {
         flavorIds: [flavor1.id, flavor2.id],
         flavorNames: [flavor1.name, flavor2.name],
         basePrice: price,
-        name: `Meio a Meio: ${flavor1.name} + ${flavor2.name}`,
+        name: `${selectedCategory.name} | Meio a Meio: ${flavor1.name} + ${flavor2.name}`,
         productId: `half-half-${flavor1.id}-${flavor2.id}`,
       });
       setSelectedAdditionals([]);
@@ -528,7 +537,7 @@ export default function PDVPage() {
         type: "HALF_HALF",
         refId: `half-half-${flavor1.id}-${flavor2.id}`,
         productId: `half-half-${flavor1.id}-${flavor2.id}`,
-        name: `Meio a Meio: ${flavor1.name} + ${flavor2.name}`,
+        name: `${selectedCategory.name} | Meio a Meio: ${flavor1.name} + ${flavor2.name}`,
         unitPrice: price,
         quantity: 1,
         notes: "",
@@ -627,7 +636,9 @@ export default function PDVPage() {
           type: "PRODUCT",
           refId: product.id,
           productId: product.id,
-          name: product.name,
+          name: selectedTarget.category?.name
+  ? `${selectedTarget.category.name} | ${product.name}`
+  : product.name,
           unitPrice: Number(finalModalPrice),
           quantity: 1,
           notes: "",

@@ -10,6 +10,7 @@ type IncomingItem = {
   name: string;
   unitPrice: number;
   quantity: number;
+  notes?: string | null;
 };
 
 function num(value: unknown, fallback = 0) {
@@ -170,6 +171,46 @@ export async function POST(req: NextRequest) {
     const discount = num(body?.discount);
     const total = Math.max(0, subtotal + deliveryFee - discount);
 
+const changeFor =
+  body?.changeFor !== null &&
+  body?.changeFor !== undefined &&
+  body?.changeFor !== ""
+    ? Math.max(0, num(body.changeFor))
+    : null;
+
+const generalObservation =
+  String(body?.observation || "").trim();
+
+const itemObservations = items
+  .map((item) => {
+    const note = String(item?.notes || "").trim();
+
+    if (!note) return null;
+
+    return `${item.quantity}x ${item.name}: ${note}`;
+  })
+  .filter((value): value is string => Boolean(value));
+
+const observationParts: string[] = [];
+
+if (generalObservation) {
+  observationParts.push(generalObservation);
+}
+
+if (itemObservations.length > 0) {
+  observationParts.push(
+    `Observações dos itens:\n${itemObservations.join("\n")}`
+  );
+}
+
+const observation =
+  observationParts.length > 0
+    ? observationParts.join("\n\n")
+    : null;
+
+const orderType =
+  String(body?.orderType || "").trim() || null;
+
     const customerBody = body?.customer || {};
 
     const customerName = String(
@@ -231,13 +272,21 @@ export async function POST(req: NextRequest) {
 
     const order = await prisma.order.create({
       data: {
-        company_id: companyId,
-        branch_id: branchId,
-        code,
-        status: "NOVO" as OrderStatus,
-        paymentMethod: normalizePaymentMethod(body?.paymentMethod),
-        total,
-        customerId,
+  company_id: companyId,
+  branch_id: branchId,
+  code,
+  status: "NOVO" as OrderStatus,
+  paymentMethod: normalizePaymentMethod(body?.paymentMethod),
+
+  subtotal,
+  deliveryFee,
+  discount,
+  total,
+  changeFor,
+  observation,
+  orderType,
+
+  customerId,
 
         items: {
           create: items.map((item) => {

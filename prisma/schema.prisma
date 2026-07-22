@@ -13,9 +13,9 @@ datasource db {
 // =====================================================
 
 model Category {
-  id                String       @id @default(cuid())
-  company_id        String       @db.Uuid
-  branch_id         String?      @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   name              String
   slug              String
@@ -25,15 +25,15 @@ model Category {
   active            Boolean      @default(true)
   sortOrder         Int          @default(0)
 
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies         companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch            branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
-  additionalLinks   AdditionalCategory[]
-  products          Product[]
-  productLinks      ProductCategory[]
+  additionalLinks AdditionalCategory[]
+  products        Product[]
+  productLinks    ProductCategory[]
 
   @@unique([company_id, slug])
   @@index([company_id], map: "idx_category_company")
@@ -41,27 +41,27 @@ model Category {
 }
 
 model Product {
-  id                       String              @id @default(cuid())
-  company_id               String              @db.Uuid
-  branch_id                String?             @db.Uuid
-  categoryId               String
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
+  categoryId String
 
-  name                     String
-  slug                     String
-  description              String?
-  price                    Float
-  imageUrl                 String?
-  active                   Boolean             @default(true)
-  inStock                  Boolean             @default(true)
-  required                 Boolean             @default(true)
-  sortOrder                Int                 @default(0)
+  name        String
+  slug        String
+  description String?
+  price       Float
+  imageUrl    String?
+  active      Boolean @default(true)
+  inStock     Boolean @default(true)
+  required    Boolean @default(true)
+  sortOrder   Int     @default(0)
 
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies                companies           @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_company_fk")
-  branch                   branches?           @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  category                 Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "product_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   comboGroupItems          ComboGroupItem[]
   orderItems               OrderItem[]
@@ -75,21 +75,21 @@ model Product {
 }
 
 model ProductCategory {
-  id          String    @id @default(cuid())
-  company_id  String    @db.Uuid
-  branch_id   String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   productId   String
   categoryId  String
-  sortOrder   Int       @default(0)
+  sortOrder   Int      @default(0)
   customPrice Float?
-  active      Boolean   @default(true)
-  createdAt   DateTime  @default(now())
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
-  companies   companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "productcategory_company_fk")
-  branch      branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "productcategory_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, categoryId])
   @@index([company_id], map: "idx_productcategory_company")
@@ -97,23 +97,23 @@ model ProductCategory {
 }
 
 model Additional {
-  id             String               @id @default(cuid())
-  company_id     String               @db.Uuid
-  branch_id      String?              @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name           String
-  slug           String
-  description    String?
-  price          Float
-  required       Boolean              @default(false)
-  active         Boolean              @default(true)
-  sortOrder      Int                  @default(0)
+  name        String
+  slug        String
+  description String?
+  price       Float
+  required    Boolean @default(false)
+  active      Boolean @default(true)
+  sortOrder   Int     @default(0)
 
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies      companies            @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch         branches?            @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   categoryLinks  AdditionalCategory[]
   productConfigs ProductAdditional[]
@@ -124,18 +124,18 @@ model Additional {
 }
 
 model AdditionalCategory {
-  id           String     @id @default(cuid())
-  company_id   String     @db.Uuid
-  branch_id    String?    @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   additionalId String
   categoryId   String
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime @default(now())
 
-  companies    companies  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch       branches?  @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  additional   Additional @relation(fields: [additionalId], references: [id], onDelete: Cascade)
-  category     Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  companies  companies  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch     branches?  @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  additional Additional @relation(fields: [additionalId], references: [id], onDelete: Cascade)
+  category   Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([additionalId, categoryId])
   @@index([company_id], map: "idx_additionalcategory_company")
@@ -143,19 +143,19 @@ model AdditionalCategory {
 }
 
 model ProductAdditional {
-  id           String     @id @default(cuid())
-  company_id   String     @db.Uuid
-  branch_id    String?    @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   productId    String
   additionalId String
-  required     Boolean    @default(false)
-  createdAt    DateTime   @default(now())
+  required     Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
-  companies    companies  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "productadditional_company_fk")
-  branch       branches?  @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  additional   Additional @relation(fields: [additionalId], references: [id], onDelete: Cascade)
-  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  companies  companies  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "productadditional_company_fk")
+  branch     branches?  @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  additional Additional @relation(fields: [additionalId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, additionalId])
   @@index([company_id], map: "idx_productadditional_company")
@@ -163,9 +163,9 @@ model ProductAdditional {
 }
 
 model Combo {
-  id          String       @id @default(cuid())
-  company_id  String       @db.Uuid
-  branch_id   String?      @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   name        String
   slug        String
@@ -173,15 +173,15 @@ model Combo {
   price       Float
   imageUrl    String?
 
-  active      Boolean      @default(true)
-  sortOrder   Int          @default(0)
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies   companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch      branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  groups      ComboGroup[]
+  companies companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  groups    ComboGroup[]
 
   @@unique([company_id, slug])
   @@index([company_id], map: "idx_combo_company")
@@ -189,39 +189,39 @@ model Combo {
 }
 
 model ComboGroup {
-  id         String           @id @default(cuid())
-  company_id String           @db.Uuid
-  branch_id  String?          @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  comboId    String
-  name       String
-  required   Boolean          @default(true)
-  minSelect  Int              @default(1)
-  maxSelect  Int              @default(1)
-  createdAt  DateTime         @default(now())
+  comboId   String
+  name      String
+  required  Boolean  @default(true)
+  minSelect Int      @default(1)
+  maxSelect Int      @default(1)
+  createdAt DateTime @default(now())
 
-  companies  companies        @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch     branches?        @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  combo      Combo            @relation(fields: [comboId], references: [id], onDelete: Cascade)
-  items      ComboGroupItem[]
+  companies companies        @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches?        @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  combo     Combo            @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  items     ComboGroupItem[]
 
   @@index([company_id], map: "idx_combogroup_company")
   @@index([branch_id], map: "idx_combogroup_branch")
 }
 
 model ComboGroupItem {
-  id           String     @id @default(cuid())
-  company_id   String     @db.Uuid
-  branch_id    String?    @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   comboGroupId String
   productId    String
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime @default(now())
 
-  companies    companies  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch       branches?  @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  comboGroup   ComboGroup @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
-  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  companies  companies  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch     branches?  @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  comboGroup ComboGroup @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([comboGroupId, productId])
   @@index([company_id], map: "idx_combogroupitem_company")
@@ -233,9 +233,9 @@ model ComboGroupItem {
 // =====================================================
 
 model Customer {
-  id           String    @id @default(cuid())
-  company_id   String    @db.Uuid
-  branch_id    String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   name         String
   whatsapp     String
@@ -246,12 +246,12 @@ model Customer {
   city         String?
   cpf          String?
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies    companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch       branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  orders       Order[]
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  orders    Order[]
 
   @@unique([company_id, whatsapp])
   @@index([company_id], map: "idx_customer_company")
@@ -260,39 +260,39 @@ model Customer {
 }
 
 model Driver {
-  id         String          @id @default(cuid())
-  company_id String          @db.Uuid
-  branch_id  String?         @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name       String
-  whatsapp   String
-  active     Boolean         @default(true)
-  createdAt  DateTime        @default(now())
+  name      String
+  whatsapp  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 
-  companies  companies       @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "driver_company_fk")
-  branch     branches?       @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  batches    DeliveryBatch[]
-  orders     Order[]
+  companies companies       @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "driver_company_fk")
+  branch    branches?       @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  batches   DeliveryBatch[]
+  orders    Order[]
 
   @@index([company_id], map: "idx_driver_company")
   @@index([branch_id], map: "idx_driver_branch")
 }
 
 model DeliveryBatch {
-  id         String              @id @default(cuid())
-  company_id String              @db.Uuid
-  branch_id  String?             @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  code       String
-  driverId   String
-  routeMode  RouteMode
-  status     DeliveryBatchStatus @default(MONTADO)
-  createdAt  DateTime            @default(now())
+  code      String
+  driverId  String
+  routeMode RouteMode
+  status    DeliveryBatchStatus @default(MONTADO)
+  createdAt DateTime            @default(now())
 
-  companies  companies           @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "deliverybatch_company_fk")
-  branch     branches?           @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  driver     Driver              @relation(fields: [driverId], references: [id])
-  orders     Order[]
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "deliverybatch_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  driver    Driver    @relation(fields: [driverId], references: [id])
+  orders    Order[]
 
   @@unique([company_id, code])
   @@index([company_id], map: "idx_deliverybatch_company")
@@ -300,31 +300,37 @@ model DeliveryBatch {
 }
 
 model Order {
-  id              String         @id @default(cuid())
-  company_id      String         @db.Uuid
-  branch_id       String?        @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  code            String?
-  status          OrderStatus    @default(NOVO)
-  paymentMethod   PaymentMethod  @default(PIX)
-  total           Float          @default(0)
+  code          String?
+  status        OrderStatus   @default(NOVO)
+  paymentMethod PaymentMethod @default(PIX)
+  total         Float         @default(0)
 
   customerId      String?
   driverId        String?
   deliveryBatchId String?
 
-  archived        Boolean        @default(false)
-  archivedAt      DateTime?
+  subtotal    Float     @default(0)
+  deliveryFee Float     @default(0)
+  discount    Float     @default(0)
+  changeFor   Float?
+  observation String?
+  orderType   String?
+  archived    Boolean   @default(false)
+  archivedAt  DateTime?
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @default(now()) @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
-  companies       companies      @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "order_company_fk")
-  branch          branches?      @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  customer        Customer?      @relation(fields: [customerId], references: [id])
-  deliveryBatch   DeliveryBatch? @relation(fields: [deliveryBatchId], references: [id])
-  driver          Driver?        @relation(fields: [driverId], references: [id])
-  items           OrderItem[]
+  companies     companies      @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "order_company_fk")
+  branch        branches?      @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  deliveryBatch DeliveryBatch? @relation(fields: [deliveryBatchId], references: [id])
+  driver        Driver?        @relation(fields: [driverId], references: [id])
+  items         OrderItem[]
 
   @@unique([company_id, code])
   @@index([company_id], map: "idx_order_company")
@@ -335,21 +341,21 @@ model Order {
 }
 
 model OrderItem {
-  id         String    @id @default(cuid())
-  company_id String    @db.Uuid
-  branch_id  String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  orderId    String
-  productId  String?
-  name       String
-  price      Float
-  quantity   Int       @default(1)
-  createdAt  DateTime  @default(now())
+  orderId   String
+  productId String?
+  name      String
+  price     Float
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "orderitem_company_fk")
-  branch     branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  order      Order     @relation(fields: [orderId], references: [id])
-  product    Product?  @relation(fields: [productId], references: [id])
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "orderitem_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  order     Order     @relation(fields: [orderId], references: [id])
+  product   Product?  @relation(fields: [productId], references: [id])
 
   @@index([company_id], map: "idx_orderitem_company")
   @@index([branch_id], map: "idx_orderitem_branch")
@@ -361,22 +367,22 @@ model OrderItem {
 // =====================================================
 
 model CrmCustomer {
-  id         String       @id @default(cuid())
-  company_id String       @db.Uuid
-  branch_id  String?      @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name       String?
-  phone      String
-  email      String?
-  tags       String[]
-  notes      String?
+  name  String?
+  phone String
+  email String?
+  tags  String[]
+  notes String?
 
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies  companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch     branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  messages   CrmMessage[]
+  companies companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  messages  CrmMessage[]
 
   @@unique([company_id, phone])
   @@index([company_id], map: "idx_crmcustomer_company")
@@ -385,20 +391,20 @@ model CrmCustomer {
 }
 
 model CrmMessage {
-  id         String       @id @default(cuid())
-  company_id String       @db.Uuid
-  branch_id  String?      @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   customerId String?
   phone      String
   direction  String
-  source     String       @default("whatsapp")
+  source     String   @default("whatsapp")
   message    String
-  createdAt  DateTime     @default(now())
+  createdAt  DateTime @default(now())
 
-  companies  companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch     branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  customer   CrmCustomer? @relation(fields: [customerId], references: [id])
+  companies companies    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches?    @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer  CrmCustomer? @relation(fields: [customerId], references: [id])
 
   @@index([company_id], map: "idx_crmmessage_company")
   @@index([branch_id], map: "idx_crmmessage_branch")
@@ -407,18 +413,18 @@ model CrmMessage {
 }
 
 model WhatsappSession {
-  id         String    @id @default(cuid())
-  company_id String    @db.Uuid
-  branch_id  String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name       String
-  sessionId  String
-  status     String    @default("offline")
-  qr         String?
-  createdAt  DateTime  @default(now())
+  name      String
+  sessionId String
+  status    String   @default("offline")
+  qr        String?
+  createdAt DateTime @default(now())
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "whatsappsession_company_fk")
-  branch     branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "whatsappsession_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([company_id, sessionId])
   @@index([company_id], map: "idx_whatsappsession_company")
@@ -426,68 +432,68 @@ model WhatsappSession {
 }
 
 model Campaign {
-  id         String    @id @default(cuid())
-  company_id String    @db.Uuid
-  branch_id  String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name       String
-  message    String
-  status     String    @default("draft")
-  createdAt  DateTime  @default(now())
+  name      String
+  message   String
+  status    String   @default("draft")
+  createdAt DateTime @default(now())
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch     branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_campaign_company")
   @@index([branch_id], map: "idx_campaign_branch")
 }
 
 model Automation {
-  id         String    @id @default(cuid())
-  company_id String    @db.Uuid
-  branch_id  String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name       String
-  trigger    String
-  response   String
-  active     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
+  name      String
+  trigger   String
+  response  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch     branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_automation_company")
   @@index([branch_id], map: "idx_automation_branch")
 }
 
 model leads {
-  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id          String             @db.Uuid
-  branch_id           String?            @db.Uuid
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   name               String?
   phone              String?
   email              String?
-  status             String?            @default("novo")
-  session_id         Int?               @default(1)
-  ai_paused          Boolean?           @default(false)
-  conversation_stage String?            @default("new")
+  status             String?   @default("novo")
+  session_id         Int?      @default(1)
+  ai_paused          Boolean?  @default(false)
+  conversation_stage String?   @default("new")
   last_message       String?
-  last_message_at    DateTime?          @db.Timestamptz(6)
-  created_at         DateTime?          @default(now()) @db.Timestamptz(6)
+  last_message_at    DateTime? @db.Timestamptz(6)
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
   whatsapp_lid       String?
   remote_jid         String?
-  opening_sent       Boolean?           @default(false)
-  updated_at         DateTime?          @default(now()) @db.Timestamptz(6)
-  campaign_step      Int?               @default(0)
-  last_campaign_at   DateTime?          @db.Timestamptz(6)
-  reactivation_at    DateTime?          @db.Timestamptz(6)
-  opt_out            Boolean?           @default(false)
+  opening_sent       Boolean?  @default(false)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+  campaign_step      Int?      @default(0)
+  last_campaign_at   DateTime? @db.Timestamptz(6)
+  reactivation_at    DateTime? @db.Timestamptz(6)
+  opt_out            Boolean?  @default(false)
 
-  companies          companies          @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch             branches?          @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  automation_queue   automation_queue[]
-  messages           messages[]
+  companies        companies          @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch           branches?          @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  automation_queue automation_queue[]
+  messages         messages[]
 
   @@unique([company_id, phone])
   @@index([company_id], map: "idx_leads_company")
@@ -497,18 +503,18 @@ model leads {
 }
 
 model messages {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id String    @db.Uuid
-  branch_id  String?   @db.Uuid
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   lead_id    String?   @db.Uuid
   direction  String?
   content    String?
   created_at DateTime? @default(now()) @db.Timestamptz(6)
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch     branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  leads      leads?    @relation(fields: [lead_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  leads     leads?    @relation(fields: [lead_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_messages_company")
   @@index([branch_id], map: "idx_messages_branch")
@@ -517,9 +523,9 @@ model messages {
 }
 
 model automation_queue {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id    String    @db.Uuid
-  branch_id     String?   @db.Uuid
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   lead_id      String?   @db.Uuid
   phone        String?
@@ -534,9 +540,9 @@ model automation_queue {
   campaign_id  String?   @db.Uuid
   attempts     Int?      @default(0)
 
-  companies    companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch       branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  leads        leads?    @relation(fields: [lead_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  leads     leads?    @relation(fields: [lead_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_automation_queue_company")
   @@index([branch_id], map: "idx_automation_queue_branch")
@@ -546,9 +552,9 @@ model automation_queue {
 }
 
 model promotion_campaigns {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id         String    @db.Uuid
-  branch_id          String?   @db.Uuid
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   name              String?
   message           String
@@ -557,8 +563,8 @@ model promotion_campaigns {
   total_queued      Int?      @default(0)
   created_at        DateTime? @default(now()) @db.Timestamptz(6)
 
-  companies         companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  branch            branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_promotion_campaigns_company")
   @@index([branch_id], map: "idx_promotion_campaigns_branch")
@@ -569,28 +575,28 @@ model promotion_campaigns {
 // =====================================================
 
 model Prospect {
-  id         String           @id @default(cuid())
-  company_id String           @db.Uuid
-  branch_id  String?          @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
-  name       String
-  age        Int?
-  email      String?
-  phone1     String?
-  phone2     String?
-  gender     String?
-  city       String?
-  address    String?
-  cep        String?
-  latitude   Float?
-  longitude  Float?
-  active     Boolean          @default(true)
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
+  name      String
+  age       Int?
+  email     String?
+  phone1    String?
+  phone2    String?
+  gender    String?
+  city      String?
+  address   String?
+  cep       String?
+  latitude  Float?
+  longitude Float?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  companies  companies        @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospect_company_fk")
-  branch     branches?        @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  exports    ProspectExport[]
+  companies companies        @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospect_company_fk")
+  branch    branches?        @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  exports   ProspectExport[]
 
   @@index([email])
   @@index([phone1])
@@ -603,18 +609,18 @@ model Prospect {
 }
 
 model ProspectExport {
-  id         String    @id @default(cuid())
-  company_id String    @db.Uuid
-  branch_id  String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   prospectId String
   clientId   String
   action     String
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospectexport_company_fk")
-  branch     branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  prospect   Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospectexport_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  prospect  Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
 
   @@unique([prospectId, clientId])
   @@index([clientId])
@@ -624,43 +630,43 @@ model ProspectExport {
 }
 
 model ProspectImportJob {
-  id           String    @id @default(cuid())
-  company_id   String    @db.Uuid
-  branch_id    String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   fileName     String?
-  totalRows    Int       @default(0)
-  created      Int       @default(0)
-  updated      Int       @default(0)
-  duplicated   Int       @default(0)
-  invalidPhone Int       @default(0)
-  underAge     Int       @default(0)
-  status       String    @default("PENDING")
+  totalRows    Int      @default(0)
+  created      Int      @default(0)
+  updated      Int      @default(0)
+  duplicated   Int      @default(0)
+  invalidPhone Int      @default(0)
+  underAge     Int      @default(0)
+  status       String   @default("PENDING")
   error        String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  companies    companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospectimportjob_company_fk")
-  branch       branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospectimportjob_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_prospectimportjob_company")
   @@index([branch_id], map: "idx_prospectimportjob_branch")
 }
 
 model ProspectUsage {
-  id           String    @id @default(cuid())
-  company_id   String    @db.Uuid
-  branch_id    String?   @db.Uuid
+  id         String  @id @default(cuid())
+  company_id String  @db.Uuid
+  branch_id  String? @db.Uuid
 
   clientId     String
   month        String
-  monthlyLimit Int       @default(500)
-  used         Int       @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  monthlyLimit Int      @default(500)
+  used         Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  companies    companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospectusage_company_fk")
-  branch       branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "prospectusage_company_fk")
+  branch    branches? @relation(fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([company_id, clientId, month])
   @@index([clientId])
@@ -673,17 +679,17 @@ model ProspectUsage {
 // =====================================================
 
 model companies {
-  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name              String
-  slug              String                  @unique
-  logo_url          String?
-  active            Boolean                 @default(true)
-  trial_ends_at     DateTime?               @db.Timestamptz(6)
-  plan_id           String?                 @db.Uuid
-  created_at        DateTime                @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  slug          String    @unique
+  logo_url      String?
+  active        Boolean   @default(true)
+  trial_ends_at DateTime? @db.Timestamptz(6)
+  plan_id       String?   @db.Uuid
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  plans             plans?                  @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  plans plans? @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   categories        Category[]
   products          Product[]
@@ -695,101 +701,101 @@ model companies {
   comboGroups       ComboGroup[]
   comboGroupItems   ComboGroupItem[]
 
-  customers         Customer[]
-  drivers           Driver[]
-  deliveryBatches   DeliveryBatch[]
-  orders            Order[]
-  orderItems        OrderItem[]
+  customers       Customer[]
+  drivers         Driver[]
+  deliveryBatches DeliveryBatch[]
+  orders          Order[]
+  orderItems      OrderItem[]
 
-  crmCustomers      CrmCustomer[]
-  crmMessages       CrmMessage[]
-  whatsappSessions  WhatsappSession[]
-  campaigns         Campaign[]
-  automations       Automation[]
-  leads             leads[]
-  messages          messages[]
-  automationQueue   automation_queue[]
+  crmCustomers       CrmCustomer[]
+  crmMessages        CrmMessage[]
+  whatsappSessions   WhatsappSession[]
+  campaigns          Campaign[]
+  automations        Automation[]
+  leads              leads[]
+  messages           messages[]
+  automationQueue    automation_queue[]
   promotionCampaigns promotion_campaigns[]
 
-  prospects         Prospect[]
-  prospectExports   ProspectExport[]
+  prospects          Prospect[]
+  prospectExports    ProspectExport[]
   prospectImportJobs ProspectImportJob[]
-  prospectUsages    ProspectUsage[]
+  prospectUsages     ProspectUsage[]
 
-  activity_logs     activity_logs[]
-  branches          branches[]
-  company_users     company_users[]
-  subscriptions     subscriptions[]
+  activity_logs activity_logs[]
+  branches      branches[]
+  company_users company_users[]
+  subscriptions subscriptions[]
 }
 
 model branches {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id String    @db.Uuid
-  name       String    @default("Matriz")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String   @db.Uuid
+  name       String   @default("Matriz")
   slug       String?
-  active     Boolean   @default(true)
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  categories Category[]
-  products   Product[]
-  productCategories ProductCategory[]
-  additionals Additional[]
+  categories           Category[]
+  products             Product[]
+  productCategories    ProductCategory[]
+  additionals          Additional[]
   additionalCategories AdditionalCategory[]
-  productAdditionals ProductAdditional[]
-  combos Combo[]
-  comboGroups ComboGroup[]
-  comboGroupItems ComboGroupItem[]
+  productAdditionals   ProductAdditional[]
+  combos               Combo[]
+  comboGroups          ComboGroup[]
+  comboGroupItems      ComboGroupItem[]
 
-  customers Customer[]
-  drivers Driver[]
+  customers       Customer[]
+  drivers         Driver[]
   deliveryBatches DeliveryBatch[]
-  orders Order[]
-  orderItems OrderItem[]
+  orders          Order[]
+  orderItems      OrderItem[]
 
-  crmCustomers CrmCustomer[]
-  crmMessages CrmMessage[]
-  whatsappSessions WhatsappSession[]
-  campaigns Campaign[]
-  automations Automation[]
-  leads leads[]
-  messages messages[]
-  automationQueue automation_queue[]
+  crmCustomers       CrmCustomer[]
+  crmMessages        CrmMessage[]
+  whatsappSessions   WhatsappSession[]
+  campaigns          Campaign[]
+  automations        Automation[]
+  leads              leads[]
+  messages           messages[]
+  automationQueue    automation_queue[]
   promotionCampaigns promotion_campaigns[]
 
-  prospects Prospect[]
-  prospectExports ProspectExport[]
+  prospects          Prospect[]
+  prospectExports    ProspectExport[]
   prospectImportJobs ProspectImportJob[]
-  prospectUsages ProspectUsage[]
+  prospectUsages     ProspectUsage[]
 
   @@unique([company_id, slug])
   @@index([company_id], map: "idx_branches_company")
 }
 
 model company_users {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id String    @db.Uuid
-  user_id    String    @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String   @db.Uuid
+  user_id    String   @db.Uuid
   role       String
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 
-  companies  companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([company_id, user_id])
   @@index([user_id], map: "idx_company_users_user")
 }
 
 model activity_logs {
-  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  company_id String?    @db.Uuid
-  user_id    String?    @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String?  @db.Uuid
+  user_id    String?  @db.Uuid
   action     String
   entity     String?
   metadata   Json?
-  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 
-  companies  companies? @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  companies companies? @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_activity_logs_company")
   @@index([user_id], map: "idx_activity_logs_user")
@@ -797,10 +803,10 @@ model activity_logs {
 }
 
 model plans {
-  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name          String
-  active        Boolean         @default(true)
-  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 
   companies     companies[]
   plan_features plan_features[]
@@ -815,7 +821,7 @@ model plan_features {
   enabled     Boolean  @default(true)
   created_at  DateTime @default(now()) @db.Timestamptz(6)
 
-  plans       plans    @relation(fields: [plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  plans plans @relation(fields: [plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([plan_id, feature])
 }
@@ -833,8 +839,8 @@ model subscriptions {
   notes                 String?
   created_at            DateTime  @default(now()) @db.Timestamptz(6)
 
-  companies             companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  plans                 plans?    @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies companies @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  plans     plans?    @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_subscriptions_company")
   @@index([plan_id], map: "idx_subscriptions_plan")
